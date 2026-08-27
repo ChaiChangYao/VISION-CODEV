@@ -1,0 +1,15 @@
+{
+  "name": "@vision-codef/test-fixtures",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": { "@vision-codef/workflow-engine": "workspace:*" },
+  "devDependencies": { "@types/node": "^24.3.0", "typescript": "^5.9.2", "vitest": "^3.2.4" }
+}
