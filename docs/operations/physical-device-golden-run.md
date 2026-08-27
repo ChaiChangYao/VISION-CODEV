@@ -4,7 +4,7 @@
 
 Use one physical Android phone or iPhone, one Bluetooth headset, the rear camera, one mounted orientation, and current stable Chrome. Build the mobile app with `pnpm --filter @vision-codef/mobile prebuild` followed by the platform development build; Expo Go is not an acceptance environment.
 
-Configure `EXPO_PUBLIC_LIVEKIT_URL`, `EXPO_PUBLIC_CAPTURE_TOKEN_ENDPOINT`, company/member/workflow/session IDs, and a reachable API. Confirm the app stays foregrounded and the screen stays awake during capture.
+Configure `EXPO_PUBLIC_LIVEKIT_URL`, `EXPO_PUBLIC_CAPTURE_TOKEN_ENDPOINT`, `EXPO_PUBLIC_CAPTURE_PAIRING_ENDPOINT`, company/member IDs, the desktop-generated pairing code, a stable device ID, and a reachable API. The native client claims the prepared session before requesting its scoped publisher token. Confirm the app stays foregrounded and the screen stays awake during capture.
 
 Configure LiveKit to send signed Egress webhooks to `/v1/webhooks/livekit`. The API marks the canonical asset available and submits Temporal processing only after a verified `egress_ended` completion; stopping Egress alone is not proof that the object is persisted.
 

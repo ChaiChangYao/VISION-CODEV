@@ -22,7 +22,7 @@ export class PhoneCaptureSession {
   private readonly audio: AudioRouteManager;
   private readonly client: LiveKitPhoneClient;
   private readonly recoveryBuffer: RollingRecoveryBuffer;
-  private readonly sessionId: string;
+  private sessionId: string;
   private publishedAudio = false;
   private publishedVideo = false;
   private egressHealthy = true;
@@ -79,6 +79,11 @@ export class PhoneCaptureSession {
       recoveryPending: this.recoveryPending,
       ...(this.machine.error ? { error: this.machine.error } : {}),
     };
+  }
+
+  setSessionIdentity(sessionId: string): void {
+    this.sessionId = sessionId;
+    this.emit();
   }
 
   async start(): Promise<void> {

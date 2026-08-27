@@ -1,4 +1,4 @@
-﻿import type {
+import type {
   CaptureState,
   MediaAssetState,
   ProcedureGraph,
@@ -28,6 +28,7 @@ export type ApiErrorCode =
   | 'MEDIA_UNAVAILABLE'
   | 'PROCESSING_FAILED'
   | 'INTERNAL_ERROR'
+  | 'EXTERNAL_PROVIDER_UNAVAILABLE'
   | 'NETWORK_ERROR';
 
 export class ApiClientError extends Error {
@@ -68,6 +69,8 @@ export type CaptureSessionView = {
   connectionStatus: 'disconnected' | 'connecting' | 'connected' | 'degraded';
   roomName?: string;
   pairingCode?: string;
+  pairedDeviceId?: string;
+  pairingExpiresAt?: string;
   pairingUrl?: string;
   durationMs?: number;
   mediaAsset?: { id: string; state: MediaAssetState; objectKey?: string };
@@ -169,6 +172,8 @@ function normalizeCapture(value: unknown): CaptureSessionView {
     connectionStatus: (input.connectionStatus ?? input.connection_status ?? 'disconnected') as CaptureSessionView['connectionStatus'],
     roomName: input.roomName ? String(input.roomName) : undefined,
     pairingCode: input.pairingCode ? String(input.pairingCode) : undefined,
+    pairedDeviceId: input.pairedDeviceId ? String(input.pairedDeviceId) : undefined,
+    pairingExpiresAt: input.pairingExpiresAt ? String(input.pairingExpiresAt) : undefined,
     pairingUrl: input.pairingUrl ? String(input.pairingUrl) : undefined,
     durationMs: typeof input.durationMs === 'number' ? input.durationMs : undefined,
     mediaAsset: media.id

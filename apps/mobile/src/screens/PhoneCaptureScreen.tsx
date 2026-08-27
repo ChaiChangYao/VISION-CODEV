@@ -27,17 +27,30 @@ export function PhoneCaptureScreen() {
       stringValue(extra?.captureTokenEndpoint) ?? process.env.EXPO_PUBLIC_CAPTURE_TOKEN_ENDPOINT;
     if (!serverUrl || !tokenEndpoint) return undefined;
 
-    return new PhoneCaptureSession({
+    let paired: { sessionId: string; workflowId: string; deviceId: string } | undefined;
+    const pairingCode = process.env.EXPO_PUBLIC_PAIRING_CODE ?? '';
+    const pairingEndpoint = process.env.EXPO_PUBLIC_CAPTURE_PAIRING_ENDPOINT ?? '';
+    const deviceId = process.env.EXPO_PUBLIC_DEVICE_ID ?? 'vision-codef-phone';
+    let captureSession: PhoneCaptureSession;
+    captureSession = new PhoneCaptureSession({
       serverUrl,
       sessionId: process.env.EXPO_PUBLIC_SESSION_ID ?? '',
-      getToken: () =>
-        requestLiveKitToken(tokenEndpoint, {
+      getToken: async () => {
+        if (!paired && pairingCode) {
+          if (!pairingEndpoint) throw new Error('EXPO_PUBLIC_CAPTURE_PAIRING_ENDPOINT is required with EXPO_PUBLIC_PAIRING_CODE.');
+          paired = await requestPairing(pairingEndpoint, { companyId: process.env.EXPO_PUBLIC_COMPANY_ID ?? '', memberId: process.env.EXPO_PUBLIC_MEMBER_ID ?? '', pairingCode, deviceId });
+          captureSession.setSessionIdentity(paired.sessionId);
+        }
+        return requestLiveKitToken(tokenEndpoint, {
           companyId: process.env.EXPO_PUBLIC_COMPANY_ID ?? '',
           memberId: process.env.EXPO_PUBLIC_MEMBER_ID ?? '',
-          workflowId: process.env.EXPO_PUBLIC_WORKFLOW_ID ?? '',
-          sessionId: process.env.EXPO_PUBLIC_SESSION_ID ?? '',
-        }),
+          workflowId: paired?.workflowId ?? process.env.EXPO_PUBLIC_WORKFLOW_ID ?? '',
+          sessionId: paired?.sessionId ?? process.env.EXPO_PUBLIC_SESSION_ID ?? '',
+          deviceId: paired?.deviceId ?? deviceId,
+        });
+      },
     });
+    return captureSession;
   }, []);
 
   useEffect(() => {
@@ -145,7 +158,7 @@ function stringValue(value: unknown): string | undefined {
 
 async function requestLiveKitToken(
   endpoint: string,
-  input: { companyId: string; memberId: string; workflowId: string; sessionId: string },
+  input: { companyId: string; memberId: string; workflowId: string; sessionId: string; deviceId: string },
 ): Promise<string> {
   const response = await fetch(endpoint, {
     method: 'POST',
@@ -154,8 +167,23 @@ async function requestLiveKitToken(
   });
   if (!response.ok) throw new Error(`Capture token request failed (${response.status}).`);
   const payload: unknown = await response.json();
-  if (!isTokenResponse(payload)) throw new Error('Capture token response did not contain a token.');
-  return payload.token;
+  const data = unwrapData(payload);
+  if (!isTokenResponse(data)) throw new Error('Capture token response did not contain a token.');
+  return data.token;
+}
+
+async function requestPairing(endpoint: string, input: { companyId: string; memberId: string; pairingCode: string; deviceId: string }): Promise<{ sessionId: string; workflowId: string; deviceId: string }> {
+  const response = await fetch(endpoint, { method: 'POST', headers: { 'content-type': 'application/json', 'x-company-id': input.companyId, 'x-member-id': input.memberId }, body: JSON.stringify({ pairingCode: input.pairingCode, deviceId: input.deviceId }) });
+  const payload: unknown = await response.json();
+  if (!response.ok) throw new Error(`Capture pairing failed (${response.status}).`);
+  const data = unwrapData(payload);
+  if (!isPairingResponse(data)) throw new Error('Capture pairing response was invalid.');
+  return data;
+}
+
+function unwrapData(value: unknown): unknown {
+  if (typeof value === 'object' && value !== null && 'data' in value) return (value as { data: unknown }).data;
+  return value;
 }
 
 function isTokenResponse(value: unknown): value is { token: string } {
@@ -166,6 +194,10 @@ function isTokenResponse(value: unknown): value is { token: string } {
     typeof value.token === 'string' &&
     value.token.length > 0
   );
+}
+
+function isPairingResponse(value: unknown): value is { sessionId: string; workflowId: string; deviceId: string } {
+  return typeof value === 'object' && value !== null && typeof (value as Record<string, unknown>).sessionId === 'string' && typeof (value as Record<string, unknown>).workflowId === 'string' && typeof (value as Record<string, unknown>).deviceId === 'string';
 }
 
 const styles = StyleSheet.create({

@@ -1483,3 +1483,7 @@ textarea:focus-visible,
     bottom: 16px;
   }
 }
+
+.pairing-instructions { display: grid; gap: 6px; margin-top: 14px; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-muted); }
+.pairing-instructions code { width: fit-content; padding: 5px 9px; border-radius: 7px; color: var(--text); background: var(--surface); font-size: 20px; letter-spacing: 3px; }
+.pairing-instructions small { color: var(--muted); }
