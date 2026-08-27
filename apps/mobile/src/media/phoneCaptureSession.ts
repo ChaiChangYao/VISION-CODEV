@@ -9,7 +9,7 @@ import {
   type CaptureMachineState,
 } from '../capture/captureSessionMachine';
 import { LiveKitAudioRouteManager, type AudioRouteManager } from '../audio/audioRouteManager';
-import type { CaptureSnapshot, FacingMode, RecoveryRequest, RecoverySegment } from '../types';
+import type { CaptureSessionConfig, CaptureSnapshot, FacingMode, RecoveryRequest, RecoverySegment } from '../types';
 import { LiveKitPhoneClient } from './livekitPhoneClient';
 import { RollingRecoveryBuffer } from '../recovery/rollingRecoveryBuffer';
 
@@ -26,10 +26,22 @@ export class PhoneCaptureSession {
   private recoveryPending = 0;
   private facingMode: FacingMode = 'rear';
 
-  constructor(options: ConstructorParameters<typeof LiveKitPhoneClient>[0], recoveryBuffer = new RollingRecoveryBuffer()) {
+  constructor(options: CaptureSessionConfig, recoveryBuffer = new RollingRecoveryBuffer()) {
     this.audio = new LiveKitAudioRouteManager();
     this.recoveryBuffer = recoveryBuffer;
     this.client = new LiveKitPhoneClient({
+      getToken: async () => {
+        const request = options.apiRequest ?? fetch;
+        const response = await request(options.tokenEndpoint, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ companyId: options.companyId, memberId: options.memberId, workflowId: options.workflowId, sessionId: options.sessionId }),
+        });
+        if (!response.ok) throw new Error('Token request failed (' + response.status + ').');
+        const result = (await response.json()) as { token?: unknown };
+        if (typeof result.token !== 'string' || result.token.length === 0) throw new Error('Token response did not contain a token.');
+        return result.token;
+      },
       ...options,
       onConnected: () => this.apply({ type: 'ROOM_CONNECTED' }),
       onReconnecting: () => this.apply({ type: 'RECONNECTING' }),
