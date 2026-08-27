@@ -1,9 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-  INITIAL_CAPTURE_MACHINE_STATE,
-  transition,
-} from './captureSessionMachine';
+import { INITIAL_CAPTURE_MACHINE_STATE, transition } from './captureSessionMachine';
 
 describe('capture session state machine', () => {
   it('requires a connected room and published tracks before active capture', () => {

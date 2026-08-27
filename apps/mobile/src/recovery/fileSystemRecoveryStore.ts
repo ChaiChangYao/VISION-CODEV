@@ -1,4 +1,4 @@
-import * as FileSystem from 'expo-file-system/legacy';
+import * as FileSystem from 'expo-file-system';
 
 import type { RecoveryBufferStore } from './rollingRecoveryBuffer';
 import type { RecoverySegment } from '../types';

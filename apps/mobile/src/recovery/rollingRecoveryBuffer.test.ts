@@ -26,13 +26,17 @@ describe('rolling recovery buffer', () => {
     await buffer.append(segment(4, 3_000, 4_000), new Uint8Array([4, 4]));
 
     expect(buffer.list().map((item) => item.sequence)).toEqual([2, 3, 4]);
-    expect((await buffer.drainForRequest({
-      sessionId: 'session-1',
-      missingFromMs: 1_500,
-      missingToMs: 2_500,
-      requestedAt: '2026-01-01T00:00:00.000Z',
-      reason: 'egress_gap',
-    })).map((item) => item.segment.sequence)).toEqual([2, 3]);
+    expect(
+      (
+        await buffer.drainForRequest({
+          sessionId: 'session-1',
+          missingFromMs: 1_500,
+          missingToMs: 2_500,
+          requestedAt: '2026-01-01T00:00:00.000Z',
+          reason: 'egress_gap',
+        })
+      ).map((item) => item.segment.sequence),
+    ).toEqual([2, 3]);
   });
 
   it('evicts oldest data when byte budget is exceeded', async () => {

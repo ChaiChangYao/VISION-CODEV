@@ -54,11 +54,17 @@ function reduce(state: CaptureMachineState, event: CaptureEvent): CaptureMachine
         : state;
     case 'PAUSE':
       return state.capture === 'active'
-        ? { capture: 'paused', connection: event.reason === 'audio_interruption' ? 'interrupted' : state.connection }
+        ? {
+            capture: 'paused',
+            connection: event.reason === 'audio_interruption' ? 'interrupted' : state.connection,
+          }
         : state;
     case 'RESUME':
       return state.capture === 'paused'
-        ? { capture: 'active', connection: state.connection === 'interrupted' ? 'connected' : state.connection }
+        ? {
+            capture: 'active',
+            connection: state.connection === 'interrupted' ? 'connected' : state.connection,
+          }
         : state;
     case 'RECONNECTING':
       return state.capture === 'active' || state.capture === 'paused'
@@ -77,9 +83,13 @@ function reduce(state: CaptureMachineState, event: CaptureEvent): CaptureMachine
         ? { capture: 'finalizing', connection: 'connected' }
         : state;
     case 'PROCESSING':
-      return state.capture === 'finalizing' ? { capture: 'processing', connection: 'disconnected' } : state;
+      return state.capture === 'finalizing'
+        ? { capture: 'processing', connection: 'disconnected' }
+        : state;
     case 'COMPLETED':
-      return state.capture === 'processing' ? { capture: 'completed', connection: 'disconnected' } : state;
+      return state.capture === 'processing'
+        ? { capture: 'completed', connection: 'disconnected' }
+        : state;
     case 'FAILED':
       return failed(event.error);
     case 'RECOVERY_REQUESTED':
