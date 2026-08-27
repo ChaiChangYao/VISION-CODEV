@@ -26,7 +26,10 @@ function runFixture(fixture: (typeof paperCraneFixtures)[number]): PaperCraneFix
     actual,
     passed: actual === fixture.expectedDecision,
     interventionLatencyMs,
-    unsupportedRecoveryInvented: actual === 'INTERRUPT' && fixture.expectedRecoveryId !== undefined && state.selectedRecoveryId !== fixture.expectedRecoveryId,
+    unsupportedRecoveryInvented:
+      actual === 'INTERRUPT' &&
+      fixture.expectedRecoveryId !== undefined &&
+      state.selectedRecoveryId !== fixture.expectedRecoveryId,
   };
 }
 

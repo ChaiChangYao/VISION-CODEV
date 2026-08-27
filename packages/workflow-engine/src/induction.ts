@@ -24,7 +24,8 @@ export async function induceReplayable(
 
 export function replayInduction(record: InductionReplayRecord): InductionDraft {
   const expected = inductionRequestFingerprint(record.request);
-  if (expected !== record.requestFingerprint) throw new Error('Induction replay fingerprint mismatch.');
+  if (expected !== record.requestFingerprint)
+    throw new Error('Induction replay fingerprint mismatch.');
   return structuredClone(record.draft);
 }
 
@@ -32,7 +33,8 @@ export function assertPinnedInduction(request: InductionRequest): void {
   const required = ['modelId', 'modelVersion', 'adapterVersion', 'promptVersion'];
   for (const field of required as Array<keyof InductionRequest>) {
     const value = request[field];
-    if (typeof value !== 'string' || value.trim().length === 0) throw new Error(`${field} must be pinned for replayable induction.`);
+    if (typeof value !== 'string' || value.trim().length === 0)
+      throw new Error(`${field} must be pinned for replayable induction.`);
   }
 }
 
