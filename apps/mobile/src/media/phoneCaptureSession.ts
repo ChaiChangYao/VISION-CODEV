@@ -17,16 +17,23 @@ const WAKE_TAG = 'vision-codef-capture';
 
 export class PhoneCaptureSession {
   private machine: CaptureMachineState = INITIAL_CAPTURE_MACHINE_STATE;
-  private appStateSubscription?: { remove(): void };
+  private appStateSubscription: { remove(): void } | undefined;
   private readonly listeners = new Set<(snapshot: CaptureSnapshot) => void>();
   private readonly audio: AudioRouteManager;
   private readonly client: LiveKitPhoneClient;
   private readonly recoveryBuffer: RollingRecoveryBuffer;
+  private readonly sessionId: string;
+  private publishedAudio = false;
+  private publishedVideo = false;
   private egressHealthy = true;
   private recoveryPending = 0;
   private facingMode: FacingMode = 'rear';
 
-  constructor(options: ConstructorParameters<typeof LiveKitPhoneClient>[0], recoveryBuffer = new RollingRecoveryBuffer()) {
+  constructor(
+    options: ConstructorParameters<typeof LiveKitPhoneClient>[0],
+    recoveryBuffer = new RollingRecoveryBuffer(),
+  ) {
+    this.sessionId = options.sessionId ?? '';
     this.audio = new LiveKitAudioRouteManager();
     this.recoveryBuffer = recoveryBuffer;
     this.client = new LiveKitPhoneClient({
@@ -34,9 +41,19 @@ export class PhoneCaptureSession {
       onConnected: () => this.apply({ type: 'ROOM_CONNECTED' }),
       onReconnecting: () => this.apply({ type: 'RECONNECTING' }),
       onReconnected: () => this.apply({ type: 'RECONNECTED' }),
-      onDisconnected: (reason) => this.apply({ type: 'DISCONNECTED', reason }),
-      onTrackPublished: () => {
-        if (this.client.isConnected && this.machine.capture === 'preparing') {
+      onDisconnected: (reason) =>
+        reason
+          ? this.apply({ type: 'DISCONNECTED', reason })
+          : this.apply({ type: 'DISCONNECTED' }),
+      onTrackPublished: (kind) => {
+        this.publishedAudio ||= kind === 'audio';
+        this.publishedVideo ||= kind === 'video';
+        if (
+          this.client.isConnected &&
+          this.publishedAudio &&
+          this.publishedVideo &&
+          this.machine.capture === 'preparing'
+        ) {
           this.apply({ type: 'PUBLISH_SUCCEEDED' });
         }
       },
@@ -54,7 +71,7 @@ export class PhoneCaptureSession {
     return {
       state: this.machine.capture,
       connection: this.machine.connection,
-      sessionId: '',
+      sessionId: this.sessionId,
       facingMode: this.facingMode,
       orientation: 'portrait',
       audioRoute: this.audio.current(),
@@ -65,6 +82,8 @@ export class PhoneCaptureSession {
   }
 
   async start(): Promise<void> {
+    this.publishedAudio = false;
+    this.publishedVideo = false;
     this.apply({ type: 'PREPARE' });
     const camera = await Camera.requestCameraPermissionsAsync();
     const microphone = await Camera.requestMicrophonePermissionsAsync();
@@ -104,6 +123,18 @@ export class PhoneCaptureSession {
     this.emit();
   }
 
+  notifyAudioInterruptionStarted(): void {
+    if (this.machine.capture === 'active')
+      this.apply({ type: 'PAUSE', reason: 'audio_interruption' });
+  }
+
+  notifyAudioInterruptionEnded(): void {
+    this.client.notifyAudioInterruptionEnded();
+    if (this.machine.capture === 'paused' && this.machine.connection === 'connected') {
+      this.apply({ type: 'RESUME' });
+    }
+  }
+
   setEgressHealth(healthy: boolean): void {
     this.egressHealthy = healthy;
     this.emit();
@@ -113,7 +144,9 @@ export class PhoneCaptureSession {
     await this.recoveryBuffer.append(segment, bytes);
   }
 
-  async prepareRecoveryUpload(request: RecoveryRequest): Promise<ReturnType<RollingRecoveryBuffer['drainForRequest']>> {
+  async prepareRecoveryUpload(
+    request: RecoveryRequest,
+  ): Promise<Awaited<ReturnType<RollingRecoveryBuffer['drainForRequest']>>> {
     this.recoveryPending += 1;
     this.apply({ type: 'RECOVERY_REQUESTED' });
     return this.recoveryBuffer.drainForRequest(request);
@@ -136,7 +169,11 @@ export class PhoneCaptureSession {
     if (nextState !== 'active' && this.machine.capture === 'active') {
       this.apply({ type: 'PAUSE', reason: 'app_backgrounded' });
     }
-    if (nextState === 'active' && this.machine.capture === 'paused' && this.machine.connection === 'connected') {
+    if (
+      nextState === 'active' &&
+      this.machine.capture === 'paused' &&
+      this.machine.connection === 'connected'
+    ) {
       this.apply({ type: 'RESUME' });
     }
   };

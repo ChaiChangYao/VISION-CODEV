@@ -41,6 +41,9 @@ importers:
       expo-constants:
         specifier: ~17.1.7
         version: 17.1.8(expo@54.0.37(@babel/core@7.29.7)(react-native@0.81.4(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)(typescript@5.9.3))(react-native@0.81.4(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))
+      expo-file-system:
+        specifier: ~18.1.11
+        version: 18.1.11(expo@54.0.37(@babel/core@7.29.7)(react-native@0.81.4(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)(typescript@5.9.3))(react-native@0.81.4(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))
       expo-keep-awake:
         specifier: ~14.1.4
         version: 14.1.4(expo@54.0.37(@babel/core@7.29.7)(react-native@0.81.4(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)(typescript@5.9.3))(react@19.1.0)
@@ -2122,6 +2125,12 @@ packages:
 
   expo-constants@18.0.14:
     resolution: {integrity: sha512-BUZm9mkl/TX7zNaN0N4C83ws7mEnesCFiKhqK+rMZwTD2+Q4wWB2kBltqnC/LrCRaMyRi40XxhCRVwuKnJkxXQ==}
+    peerDependencies:
+      expo: '*'
+      react-native: '*'
+
+  expo-file-system@18.1.11:
+    resolution: {integrity: sha512-HJw/m0nVOKeqeRjPjGdvm+zBi5/NxcdPf8M8P3G2JFvH5Z8vBWqVDic2O58jnT1OFEy0XXzoH9UqFu7cHg9DTQ==}
     peerDependencies:
       expo: '*'
       react-native: '*'
@@ -6568,6 +6577,11 @@ snapshots:
       react-native: 0.81.4(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0)
     transitivePeerDependencies:
       - supports-color
+
+  expo-file-system@18.1.11(expo@54.0.37(@babel/core@7.29.7)(react-native@0.81.4(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)(typescript@5.9.3))(react-native@0.81.4(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0)):
+    dependencies:
+      expo: 54.0.37(@babel/core@7.29.7)(react-native@0.81.4(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)(typescript@5.9.3)
+      react-native: 0.81.4(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0)
 
   expo-file-system@19.0.24(expo@54.0.37(@babel/core@7.29.7)(react-native@0.81.4(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)(typescript@5.9.3))(react-native@0.81.4(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0)):
     dependencies:

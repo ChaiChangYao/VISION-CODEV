@@ -9,12 +9,7 @@ export type CaptureState =
   | 'failed';
 
 export type ConnectionState =
-  | 'disconnected'
-  | 'connecting'
-  | 'connected'
-  | 'reconnecting'
-  | 'interrupted'
-  | 'failed';
+  'disconnected' | 'connecting' | 'connected' | 'reconnecting' | 'interrupted' | 'failed';
 
 export type FacingMode = 'front' | 'rear';
 export type DeviceOrientation = 'portrait' | 'landscape';

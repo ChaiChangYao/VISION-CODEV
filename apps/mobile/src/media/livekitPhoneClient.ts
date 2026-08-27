@@ -14,6 +14,7 @@ export type LiveKitTokenProvider = () => Promise<string>;
 
 export type LiveKitPhoneClientOptions = {
   serverUrl: string;
+  sessionId?: string;
   getToken: LiveKitTokenProvider;
   facingMode?: FacingMode;
   onConnected?: () => void;
@@ -26,9 +27,9 @@ export type LiveKitPhoneClientOptions = {
 
 export class LiveKitPhoneClient {
   private readonly options: LiveKitPhoneClientOptions;
-  private room?: Room;
-  private localVideo?: LocalVideoTrack;
-  private localAudio?: LocalAudioTrack;
+  private room: Room | undefined;
+  private localVideo: LocalVideoTrack | undefined;
+  private localAudio: LocalAudioTrack | undefined;
   private facingMode: FacingMode;
 
   constructor(options: LiveKitPhoneClientOptions) {
@@ -114,11 +115,19 @@ export class LiveKitPhoneClient {
     });
   }
 
+  notifyAudioInterruptionEnded(): void {
+    // Native AVAudioSession/Android audio-route observers call this when the
+    // communication route is available again.
+    void this.room?.startAudio();
+  }
+
   private registerRoomListeners(room: Room): void {
     room.on(RoomEvent.Connected, () => this.options.onConnected?.());
     room.on(RoomEvent.Reconnecting, () => this.options.onReconnecting?.());
     room.on(RoomEvent.Reconnected, () => this.options.onReconnected?.());
-    room.on(RoomEvent.Disconnected, (reason) => this.options.onDisconnected?.(String(reason ?? 'unknown')));
+    room.on(RoomEvent.Disconnected, (reason) =>
+      this.options.onDisconnected?.(String(reason ?? 'unknown')),
+    );
   }
 }
 

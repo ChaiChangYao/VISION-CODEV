@@ -23,9 +23,9 @@ Repeat on physical hardware for portrait and landscape, front/rear switching, Bl
 
 ## Phase 15 compatibility matrix
 
-| Platform | Device / OS | Bluetooth | Wired | Portrait | Landscape | Result / notes |
-|---|---|---|---|---|---|---|
-| Android | _fill in_ | _pass/fail_ | _pass/fail_ | _pass/fail_ | _pass/fail_ | _fill in_ |
-| iOS | _fill in_ | _pass/fail_ | _pass/fail_ | _pass/fail_ | _pass/fail_ | _fill in_ |
+| Platform | Device / OS | Bluetooth   | Wired       | Portrait    | Landscape   | Result / notes |
+| -------- | ----------- | ----------- | ----------- | ----------- | ----------- | -------------- |
+| Android  | _fill in_   | _pass/fail_ | _pass/fail_ | _pass/fail_ | _pass/fail_ | _fill in_      |
+| iOS      | _fill in_   | _pass/fail_ | _pass/fail_ | _pass/fail_ | _pass/fail_ | _fill in_      |
 
 If the second platform or a wired headset is unavailable, mark that compatibility row blocked; do not represent the core single-device demonstrator as failed.

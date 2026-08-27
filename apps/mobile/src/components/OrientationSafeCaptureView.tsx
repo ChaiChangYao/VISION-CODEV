@@ -21,7 +21,9 @@ export function OrientationSafeCaptureView({ children }: PropsWithChildren) {
     };
   }, []);
 
-  return <View style={[styles.root, orientation === 'landscape' && styles.landscape]}>{children}</View>;
+  return (
+    <View style={[styles.root, orientation === 'landscape' && styles.landscape]}>{children}</View>
+  );
 }
 
 function toDeviceOrientation(orientation: ScreenOrientation.Orientation): DeviceOrientation {

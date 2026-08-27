@@ -21,6 +21,7 @@
     "expo": "~54.0.0",
     "expo-camera": "~16.1.6",
     "expo-constants": "~17.1.7",
+    "expo-file-system": "~18.1.11",
     "expo-keep-awake": "~14.1.4",
     "expo-screen-orientation": "~8.1.7",
     "livekit-client": "^2.22.1",
