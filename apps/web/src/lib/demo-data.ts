@@ -1,4 +1,10 @@
-import type { CaptureState, ProcedureGraph, ProcedureStep, ProvenanceClass, WorkflowFamily } from '@vision-codef/contracts';
+import type {
+  CaptureState,
+  ProcedureGraph,
+  ProcedureStep,
+  ProvenanceClass,
+  WorkflowFamily,
+} from '@vision-codef/contracts';
 
 export const DEMO_IDS = {
   company: '0198d9f2-2d2a-7cc1-ae15-bd6f4d8a1b01',
@@ -69,8 +75,16 @@ export const demoGraph: ProcedureGraph = {
   id: DEMO_IDS.workflow,
   version: 1,
   states: [
-    { id: DEMO_IDS.stateStart, label: 'Flat and aligned', predicates: ['four corners visible', 'bottom edge aligned'] },
-    { id: DEMO_IDS.stateFolded, label: 'Triangle fold', predicates: ['top corner meets bottom corner'] },
+    {
+      id: DEMO_IDS.stateStart,
+      label: 'Flat and aligned',
+      predicates: ['four corners visible', 'bottom edge aligned'],
+    },
+    {
+      id: DEMO_IDS.stateFolded,
+      label: 'Triangle fold',
+      predicates: ['top corner meets bottom corner'],
+    },
     { id: DEMO_IDS.stateComplete, label: 'Complete', predicates: ['center crease is flat'] },
   ],
   steps: demoSteps,

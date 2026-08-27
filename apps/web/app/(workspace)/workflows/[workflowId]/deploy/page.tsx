@@ -2,12 +2,194 @@
 
 import { useState } from 'react';
 import { Badge, Button, Card, Icon, StateNotice } from '@vision-codef/ui';
-import { WorkflowHeader } from '../../../../../components/workflow-navigation';
+import { WorkflowHeader } from '../../../../components/workflow-navigation';
 
 export default function DeployPage() {
   const [started, setStarted] = useState(false);
   const [recovered, setRecovered] = useState(false);
   const [why, setWhy] = useState(false);
 
-  return <div><WorkflowHeader stage="deploy" /><div className="deploy-hero"><Card className="deploy-progress"><div className="progress-header"><h2>Paper crane · Run 001</h2><span>{recovered ? 'Complete' : started ? 'Step 2 of 3' : 'Ready'}</span></div><div className="progress-track"><i style={{ width: recovered ? '100%' : started ? '67%' : '0%' }} /></div><div className="progress-steps"><span className={started ? '' : 'progress-current'}>Set paper</span><span className={started ? 'progress-current' : ''}>Top fold</span><span className={recovered ? 'progress-current' : ''}>Center crease</span></div></Card><Card className="deploy-live"><p className="eyebrow">Live guidance</p><Badge tone="green">{recovered ? 'Run complete' : started ? 'Monitoring active' : 'Ready to start'}</Badge><h2>{recovered ? 'Procedure complete.' : started ? 'Fold the top corner down.' : 'Start a guided run.'}</h2><p>{recovered ? 'The approved recovery returned the run to a known state.' : started ? 'Bring the top corner down to meet the bottom corner, then crease firmly.' : 'A published procedure is ready for a technician on a connected phone.'}</p></Card></div><div className="deploy-columns"><div className="side-stack"><Card className="surface-card"><div className="surface-card-header"><h2>Run monitor</h2><span className="capture-status"><i /> {started && !recovered ? 'Observing' : 'Standby'}</span></div><div className="surface-card-body">{!started ? <div className="ui-empty-state"><span className="ui-empty-icon"><Icon name="play" size={22} /></span><h3>No active run</h3><p>Start when the technician and phone are ready. Monitoring will remain foreground-only.</p><Button id="deploy-start" variant="primary" onClick={() => setStarted(true)}><Icon name="play" size={14} /> Start deployment</Button></div> : recovered ? <StateNotice tone="green" icon="check" title="Run completed">All required transitions were observed and the final state was confirmed.</StateNotice> : <><div className="alert-action" role="alert"><Icon name="info" size={19} /><div><strong>Check the fold alignment</strong><p>The left corner is moving toward the bottom edge. This does not match the approved top-corner fold.</p><Button id="deploy-recovery" variant="danger" size="sm" onClick={() => setRecovered(true)}>Interrupt and return to prior state</Button></div></div><div className="why-box"><strong>Automatic monitoring is on</strong><p>The operator can say “stop guidance” to pause spoken prompts. Visual deviation monitoring remains enabled.</p></div></>}</div></Card><Card className="surface-card"><div className="surface-card-header"><h2>Why this intervention?</h2><Button id="deploy-why" variant="ghost" size="sm" onClick={() => setWhy(!why)} aria-expanded={why}>Why? <Icon name="chevron-down" size={13} /></Button></div>{why && <div className="surface-card-body"><StateNotice icon="book" title="Approved evidence">The required transition is “top corner meets bottom corner,” from the published procedure v1. This explanation is linked to approved requirement content, not an unreviewed model inference.</StateNotice></div>}</Card></div><div className="side-stack"><Card className="surface-card"><div className="surface-card-header"><h2>Run details</h2></div><div className="surface-card-body"><div className="detail-list"><div className="detail-row"><span>Procedure</span><strong>Published v1</strong></div><div className="detail-row"><span>Technician</span><strong>Unassigned</strong></div><div className="detail-row"><span>Camera</span><strong>Phone · rear</strong></div><div className="detail-row"><span>Audio</span><strong>Bluetooth</strong></div><div className="detail-row"><span>Confidence floor</span><strong>0.82</strong></div></div></div></Card><Card className="surface-card"><div className="surface-card-header"><h2>Voice controls</h2></div><div className="surface-card-body"><div className="process-list"><div className="process-step"><span className="process-icon"><Icon name="mic" size={13} /></span><span>“Start guidance” wakes prompts</span></div><div className="process-step"><span className="process-icon"><Icon name="stop" size={13} /></span><span>“Stop guidance” pauses speech</span></div><div className="process-step"><span className="process-icon"><Icon name="shield" size={13} /></span><span>Visual monitoring stays active</span></div></div></div></Card></div></div></div>;
+  return (
+    <div>
+      <WorkflowHeader stage="deploy" />
+      <div className="deploy-hero">
+        <Card className="deploy-progress">
+          <div className="progress-header">
+            <h2>Paper crane · Run 001</h2>
+            <span>{recovered ? 'Complete' : started ? 'Step 2 of 3' : 'Ready'}</span>
+          </div>
+          <div className="progress-track">
+            <i style={{ width: recovered ? '100%' : started ? '67%' : '0%' }} />
+          </div>
+          <div className="progress-steps">
+            <span className={started ? '' : 'progress-current'}>Set paper</span>
+            <span className={started ? 'progress-current' : ''}>Top fold</span>
+            <span className={recovered ? 'progress-current' : ''}>Center crease</span>
+          </div>
+        </Card>
+        <Card className="deploy-live">
+          <p className="eyebrow">Live guidance</p>
+          <Badge tone="green">
+            {recovered ? 'Run complete' : started ? 'Monitoring active' : 'Ready to start'}
+          </Badge>
+          <h2>
+            {recovered
+              ? 'Procedure complete.'
+              : started
+                ? 'Fold the top corner down.'
+                : 'Start a guided run.'}
+          </h2>
+          <p>
+            {recovered
+              ? 'The approved recovery returned the run to a known state.'
+              : started
+                ? 'Bring the top corner down to meet the bottom corner, then crease firmly.'
+                : 'A published procedure is ready for a technician on a connected phone.'}
+          </p>
+        </Card>
+      </div>
+      <div className="deploy-columns">
+        <div className="side-stack">
+          <Card className="surface-card">
+            <div className="surface-card-header">
+              <h2>Run monitor</h2>
+              <span className="capture-status">
+                <i /> {started && !recovered ? 'Observing' : 'Standby'}
+              </span>
+            </div>
+            <div className="surface-card-body">
+              {!started ? (
+                <div className="ui-empty-state">
+                  <span className="ui-empty-icon">
+                    <Icon name="play" size={22} />
+                  </span>
+                  <h3>No active run</h3>
+                  <p>
+                    Start when the technician and phone are ready. Monitoring will remain
+                    foreground-only.
+                  </p>
+                  <Button id="deploy-start" variant="primary" onClick={() => setStarted(true)}>
+                    <Icon name="play" size={14} /> Start deployment
+                  </Button>
+                </div>
+              ) : recovered ? (
+                <StateNotice tone="green" icon="check" title="Run completed">
+                  All required transitions were observed and the final state was confirmed.
+                </StateNotice>
+              ) : (
+                <>
+                  <div className="alert-action" role="alert">
+                    <Icon name="info" size={19} />
+                    <div>
+                      <strong>Check the fold alignment</strong>
+                      <p>
+                        The left corner is moving toward the bottom edge. This does not match the
+                        approved top-corner fold.
+                      </p>
+                      <Button
+                        id="deploy-recovery"
+                        variant="danger"
+                        size="sm"
+                        onClick={() => setRecovered(true)}
+                      >
+                        Interrupt and return to prior state
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="why-box">
+                    <strong>Automatic monitoring is on</strong>
+                    <p>
+                      The operator can say “stop guidance” to pause spoken prompts. Visual deviation
+                      monitoring remains enabled.
+                    </p>
+                  </div>
+                </>
+              )}
+            </div>
+          </Card>
+          <Card className="surface-card">
+            <div className="surface-card-header">
+              <h2>Why this intervention?</h2>
+              <Button
+                id="deploy-why"
+                variant="ghost"
+                size="sm"
+                onClick={() => setWhy(!why)}
+                aria-expanded={why}
+              >
+                Why? <Icon name="chevron-down" size={13} />
+              </Button>
+            </div>
+            {why && (
+              <div className="surface-card-body">
+                <StateNotice icon="book" title="Approved evidence">
+                  The required transition is “top corner meets bottom corner,” from the published
+                  procedure v1. This explanation is linked to approved requirement content, not an
+                  unreviewed model inference.
+                </StateNotice>
+              </div>
+            )}
+          </Card>
+        </div>
+        <div className="side-stack">
+          <Card className="surface-card">
+            <div className="surface-card-header">
+              <h2>Run details</h2>
+            </div>
+            <div className="surface-card-body">
+              <div className="detail-list">
+                <div className="detail-row">
+                  <span>Procedure</span>
+                  <strong>Published v1</strong>
+                </div>
+                <div className="detail-row">
+                  <span>Technician</span>
+                  <strong>Unassigned</strong>
+                </div>
+                <div className="detail-row">
+                  <span>Camera</span>
+                  <strong>Phone · rear</strong>
+                </div>
+                <div className="detail-row">
+                  <span>Audio</span>
+                  <strong>Bluetooth</strong>
+                </div>
+                <div className="detail-row">
+                  <span>Confidence floor</span>
+                  <strong>0.82</strong>
+                </div>
+              </div>
+            </div>
+          </Card>
+          <Card className="surface-card">
+            <div className="surface-card-header">
+              <h2>Voice controls</h2>
+            </div>
+            <div className="surface-card-body">
+              <div className="process-list">
+                <div className="process-step">
+                  <span className="process-icon">
+                    <Icon name="mic" size={13} />
+                  </span>
+                  <span>“Start guidance” wakes prompts</span>
+                </div>
+                <div className="process-step">
+                  <span className="process-icon">
+                    <Icon name="stop" size={13} />
+                  </span>
+                  <span>“Stop guidance” pauses speech</span>
+                </div>
+                <div className="process-step">
+                  <span className="process-icon">
+                    <Icon name="shield" size={13} />
+                  </span>
+                  <span>Visual monitoring stays active</span>
+                </div>
+              </div>
+            </div>
+          </Card>
+        </div>
+      </div>
+    </div>
+  );
 }
