@@ -23,7 +23,9 @@ export type AppConfig = z.infer<typeof ConfigSchema>;
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const result = ConfigSchema.safeParse(env);
   if (!result.success) {
-    const details = result.error.issues.map((issue) => `${issue.path.join('.')}: ${issue.message}`).join('; ');
+    const details = result.error.issues
+      .map((issue) => `${issue.path.join('.')}: ${issue.message}`)
+      .join('; ');
     throw new Error(`Invalid application configuration: ${details}`);
   }
   return result.data;
@@ -34,6 +36,8 @@ export function loadConfigIfPresent(env: NodeJS.ProcessEnv = process.env): AppCo
   return loadConfig(env);
 }
 
-export function publicConfig(config: AppConfig): Pick<AppConfig, 'NODE_ENV' | 'API_URL' | 'WEB_URL'> {
+export function publicConfig(
+  config: AppConfig,
+): Pick<AppConfig, 'NODE_ENV' | 'API_URL' | 'WEB_URL'> {
   return { NODE_ENV: config.NODE_ENV, API_URL: config.API_URL, WEB_URL: config.WEB_URL };
 }
