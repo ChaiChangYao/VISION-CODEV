@@ -1,4 +1,4 @@
-import type {
+﻿import type {
   CaptureState,
   MediaAssetState,
   ProcedureGraph,
@@ -109,6 +109,14 @@ export type DeploymentView = {
   why?: { text: string; evidenceIds: string[]; procedureVersion: number };
 };
 
+export type PaperCraneObservation = {
+  timestampMs: number;
+  corners: Array<{ x: number; y: number }>;
+  foldState: 'flat' | 'diagonal-left' | 'diagonal-right' | 'triangle' | 'completed' | 'unknown';
+  visibilityScore: number;
+  alignmentScore: number;
+  handOccluded: boolean;
+};
 export type WorkflowApi = {
   routeIntent(brief: string): Promise<WorkflowIntent>;
   createWorkflow(input: { brief: string; family: 'golden_run' }): Promise<WorkflowSummary>;
@@ -126,6 +134,7 @@ export type WorkflowApi = {
   startDeployment(workflowId: string): Promise<DeploymentView>;
   getDeployment(deploymentId: string): Promise<DeploymentView>;
   requestRecovery(deploymentId: string, recoveryStepId: string): Promise<DeploymentView>;
+  observeDeployment(deploymentId: string, observation: PaperCraneObservation): Promise<DeploymentView & { decision: string; decisionReason: string }>;
 };
 
 type ApiEnvelope<T> = { data: T; traceId: string; schemaVersion: string };
@@ -334,6 +343,13 @@ export function createApiClient(config: ApiClientConfig = {}): WorkflowApi {
         body: JSON.stringify({ recoveryStepId }),
       }));
     },
+    async observeDeployment(deploymentId, observation) {
+      const value = await request<Record<string, unknown>>(`/v1/deployments/${deploymentId}/observations`, {
+        method: 'POST',
+        body: JSON.stringify(observation),
+      });
+      return { ...normalizeDeployment(value), decision: String(value.decision ?? 'WAIT'), decisionReason: String(value.decisionReason ?? '') };
+    },
   };
 }
 
@@ -346,3 +362,4 @@ export function getApiClient(config?: ApiClientConfig) {
 }
 
 export type { ProcedureStep };
+

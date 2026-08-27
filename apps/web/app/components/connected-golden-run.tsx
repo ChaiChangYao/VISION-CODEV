@@ -1,0 +1,56 @@
+﻿'use client';
+
+import { useCallback, useEffect, useState } from 'react';
+import { Badge, Button, Card, Icon, StateNotice } from '@vision-codef/ui';
+import { getApiClient, type CaptureSessionView, type DeploymentView, type ProcessingStatus, ApiClientError, isDemoFixturesEnabled } from '../../src/lib/api-client';
+import { demoGraph } from '../../src/lib/demo-data';
+
+type Stage = 'train' | 'approve' | 'deploy';
+
+export function ConnectedGoldenRun({ workflowId, stage }: { workflowId: string; stage: Stage }) {
+  const [capture, setCapture] = useState<CaptureSessionView>();
+  const [processing, setProcessing] = useState<ProcessingStatus>();
+  const [deployment, setDeployment] = useState<DeploymentView>();
+  const [graph, setGraph] = useState(demoGraph);
+  const [selectedStep, setSelectedStep] = useState(0);
+  const [instruction, setInstruction] = useState(demoGraph.steps[0]?.instruction ?? '');
+  const [message, setMessage] = useState<string>();
+  const [error, setError] = useState<string>();
+  const api = getApiClient();
+
+  const reportError = (value: unknown) => setError(value instanceof ApiClientError ? value.message : value instanceof Error ? value.message : String(value));
+  const loadGraph = useCallback(async () => { try { const value = await api.getProcedureGraph(workflowId); setGraph(value); setInstruction(value.steps[0]?.instruction ?? ''); } catch (value) { reportError(value); } }, [api, workflowId]);
+
+  useEffect(() => { if (stage === 'approve') void loadGraph(); }, [stage, loadGraph]);
+
+  const createCapture = async () => { try { setError(undefined); setCapture(await api.createCaptureSession(workflowId)); setMessage('Capture session prepared. Open the native app to pair the phone.'); } catch (value) { reportError(value); } };
+  const startCapture = async () => { if (!capture) return; try { setCapture(await api.startCapture(capture.id)); setMessage('Capture is active. The desktop monitor is waiting for LiveKit tracks.'); } catch (value) { reportError(value); } };
+  const stopCapture = async () => { if (!capture) return; try { setCapture(await api.stopCapture(capture.id)); setProcessing(await api.getProcessing(capture.id)); setMessage('Capture finalized; durable processing has been queued.'); } catch (value) { reportError(value); } };
+  const publish = async () => { try { const value = await api.publishProcedure(workflowId, { graph: { ...graph, steps: graph.steps.map((step, index) => index === selectedStep ? { ...step, instruction } : step) } }); setGraph(value); setMessage('Procedure published as an immutable version.'); } catch (value) { reportError(value); } };
+  const startDeployment = async () => { try { setDeployment(await api.startDeployment(workflowId)); setMessage('Deployment is ready for the technician phone.'); } catch (value) { reportError(value); } };
+  const recover = async () => { if (!deployment?.intervention) return; try { setDeployment(await api.requestRecovery(deployment.id, deployment.intervention.recoveryStepId)); setMessage('Approved recovery selected; the run returned to a valid state.'); } catch (value) { reportError(value); } };
+  const runWrongFoldFixture = async () => { if (!deployment) return; const corners = [{ x: 0, y: 0 }, { x: 100, y: 2 }, { x: 98, y: 100 }, { x: 2, y: 98 }]; try { setError(undefined); await api.observeDeployment(deployment.id, { timestampMs: 0, corners, foldState: 'diagonal-left', visibilityScore: 0.95, alignmentScore: 0.95, handOccluded: false }); const result = await api.observeDeployment(deployment.id, { timestampMs: 800, corners, foldState: 'diagonal-left', visibilityScore: 0.95, alignmentScore: 0.95, handOccluded: false }); setDeployment(result); setMessage(result.decision === 'INTERRUPT' ? 'Controlled fixture produced the required persisted deviation intervention.' : `Fixture decision: ${result.decision}.`); } catch (value) { reportError(value); } };
+
+  if (stage === 'approve') return <ApprovePanel graph={graph} selectedStep={selectedStep} instruction={instruction} setSelectedStep={(index) => { setSelectedStep(index); setInstruction(graph.steps[index]?.instruction ?? ''); }} setInstruction={setInstruction} onPublish={publish} message={message} error={error} />;
+  if (stage === 'deploy') return <DeployPanel deployment={deployment} onStart={startDeployment} onRecover={recover} onWrongFoldFixture={runWrongFoldFixture} message={message} error={error} />;
+  return <TrainPanel capture={capture} processing={processing} onCreate={createCapture} onStart={startCapture} onStop={stopCapture} message={message} error={error} />;
+}
+
+function Notice({ message, error }: { message?: string; error?: string }) { return <>{error ? <StateNotice tone="red" icon="info" title="Action could not complete">{error}</StateNotice> : null}{message ? <StateNotice tone="green" icon="check" title="Updated">{message}</StateNotice> : null}</>; }
+
+function TrainPanel({ capture, processing, onCreate, onStart, onStop, message, error }: { capture?: CaptureSessionView; processing?: ProcessingStatus; onCreate: () => void; onStart: () => void; onStop: () => void; message?: string; error?: string }) {
+  const active = capture?.state === 'active';
+  return <div><Notice message={message} error={error} /><div className="surface-grid"><Card className="surface-card"><div className="surface-card-header"><h2>Desktop monitor</h2><Badge tone={active ? 'green' : 'neutral'}>{active ? 'Session active' : 'Not connected'}</Badge></div><div className="surface-card-body"><div className="monitor-stage" aria-label="LiveKit desktop monitor preview"><div className="monitor-grid" /><div className="monitor-placeholder"><Icon name={active ? 'video' : 'cloud-off'} size={24} /><strong>{active ? 'Waiting for phone video' : 'Create a capture session'}</strong><small>{active ? 'The API is ready for a physical phone publisher. No media is fabricated.' : 'The session must be prepared before the native phone can pair.'}</small></div></div><div className="monitor-controls">{!capture ? <Button id="train-create-session" variant="primary" onClick={onCreate}><Icon name="plus" size={14} /> Prepare capture</Button> : capture.state === 'preparing' ? <Button id="train-start-session" variant="primary" onClick={onStart}><Icon name="play" size={14} /> Start capture</Button> : <Button id="train-stop-session" variant="danger" onClick={onStop} disabled={!active}><Icon name="stop" size={14} /> Stop and process</Button>}</div></div></Card><Card className="surface-card"><div className="surface-card-header"><h2>Processing</h2><Badge tone={processing?.status === 'completed' ? 'green' : 'neutral'}>{processing?.status ?? 'Not started'}</Badge></div><div className="surface-card-body"><div className="progress-track"><i style={{ width: `${processing?.progress ?? 0}%` }} /></div><p className="lede">{processing?.message ?? 'Stopping a capture queues transcription, observations, and procedure-graph induction.'}</p></div></Card></div></div>;
+}
+
+function ApprovePanel({ graph, selectedStep, instruction, setSelectedStep, setInstruction, onPublish, message, error }: { graph: typeof demoGraph; selectedStep: number; instruction: string; setSelectedStep: (index: number) => void; setInstruction: (value: string) => void; onPublish: () => void; message?: string; error?: string }) {
+  return <div><Notice message={message} error={error} /><div className="approve-layout"><Card className="step-list"><div className="step-list-header"><h2>Procedure steps <Badge tone="neutral">{graph.steps.length}</Badge></h2></div>{graph.steps.map((step, index) => <button key={step.id} className={`step-row ${index === selectedStep ? 'step-row-active' : ''}`} onClick={() => setSelectedStep(index)}><span className="step-number">{index + 1}</span><span><strong>{step.title}</strong><small>{step.provenance.join(' Â· ')}</small></span></button>)}</Card><Card className="editor-card"><p className="eyebrow">Reviewer editor</p><h2>Make the instruction unambiguous</h2><div className="form-field"><label htmlFor="connected-step-instruction">Instruction</label><textarea id="connected-step-instruction" value={instruction} onChange={(event) => setInstruction(event.target.value)} /></div><div className="editor-footer"><small><Icon name="shield" size={13} /> Publication requires an explicit reviewer action.</small><Button id="connected-publish" variant="primary" onClick={onPublish} disabled={!instruction.trim()}><Icon name="check" size={14} /> Approve & publish</Button></div></Card></div></div>;
+}
+
+function DeployPanel({ deployment, onStart, onRecover, onWrongFoldFixture, message, error }: { deployment?: DeploymentView; onStart: () => void; onRecover: () => void; onWrongFoldFixture: () => void; message?: string; error?: string }) {
+  const complete = deployment?.status === 'completed';
+  return <div><Notice message={message} error={error} /><div className="deploy-columns"><Card className="surface-card"><div className="surface-card-header"><h2>Live deployment</h2><Badge tone={complete ? 'green' : deployment ? 'amber' : 'neutral'}>{complete ? 'Complete' : deployment?.status ?? 'Ready'}</Badge></div><div className="surface-card-body">{!deployment ? <Button id="connected-deploy-start" variant="primary" onClick={onStart}><Icon name="play" size={14} /> Start deployment</Button> : complete ? <StateNotice tone="green" icon="check" title="Run completed">The approved recovery returned the technician to a valid state.</StateNotice> : <><h2>{deployment.currentInstruction ?? 'Monitoring the current procedure state.'}</h2><p>Automatic monitoring remains active while interactive voice dialogue is closed.</p>{isDemoFixturesEnabled() ? <Button id="connected-wrong-fold-fixture" variant="secondary" onClick={onWrongFoldFixture}><Icon name="activity" size={14} /> Run wrong-fold fixture</Button> : null}{deployment.intervention ? <div className="alert-action" role="alert"><strong>{deployment.intervention.title}</strong><p>{deployment.intervention.detail}</p><Button id="connected-deploy-recover" variant="danger" onClick={onRecover}><Icon name="refresh" size={14} /> Interrupt and recover</Button></div> : null}</>}</div></Card></div></div>;
+}
+
+
+
