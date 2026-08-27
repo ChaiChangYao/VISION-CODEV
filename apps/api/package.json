@@ -11,6 +11,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@temporalio/client": "1.23.0",
     "@vision-codef/contracts": "workspace:*",
     "@vision-codef/workflow-engine": "workspace:*",
     "livekit-server-sdk": "^2.18.0"

@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import { EgressStatus, WebhookReceiver } from 'livekit-server-sdk';
 import { createHash, randomUUID } from 'node:crypto';
 import { URL } from 'node:url';
 import { WorkflowIntentSchema, type EventEnvelope, type ProcedureGraph, type WorkflowIntent } from '@vision-codef/contracts';
@@ -6,6 +7,7 @@ import { DevelopmentStore, type CaptureSession, type DeploymentRun, type MediaAs
 import { evaluatePaperCraneObservation, PAPER_CRANE_POLICY } from './paper-crane.js';
 import { issueLiveKitToken } from './livekit-token.js';
 import { canonicalObjectKey, getCanonicalEgressConfig, startCanonicalEgress, stopCanonicalEgress } from './livekit-egress.js';
+import { getProcessingMetadata, startCaptureProcessing } from './processing-client.js';
 import { parseTenantContext, TenantContextError } from './tenant-context.js';
 import type { DeviationState } from '@vision-codef/workflow-engine';
 
@@ -34,7 +36,8 @@ function graphFor(workflowId: string): ProcedureGraph {
   return { id: workflowId, version: 1, published: false, states: [{ id: start, label: 'Flat and aligned', predicates: ['four corners visible', 'bottom edge aligned'] }, { id: folded, label: 'Triangle fold', predicates: ['top corner meets bottom corner'] }, { id: complete, label: 'Complete', predicates: ['center crease is flat'] }], steps: [{ id: first, ordinalHint: 0, title: 'Set the paper square', instruction: 'Place the paper with the white side up and align the bottom edge with the mat.', observedAction: 'Paper boundary and four corners are visible.', evidenceRefs: [], provenance: ['EXPERT_ASSERTION', 'PUBLISHED_REQUIREMENT'], startState: [start], expectedAction: ['place paper', 'align bottom edge', '*'], endState: [folded], allowableVariations: ['Small rotation under 5 degrees'], deviationRules: ['Request better visibility if fewer than four corners are visible.'], recoveryTransitions: [], confidence: 0.98 }, { id: second, ordinalHint: 1, title: 'Fold the top corner down', instruction: 'Bring the top corner down to meet the bottom corner, then crease firmly.', observedAction: 'Top corner moves toward the bottom corner.', evidenceRefs: [], provenance: ['EXPERT_ASSERTION', 'SENSOR_OBSERVATION', 'PUBLISHED_REQUIREMENT'], startState: [folded], expectedAction: ['fold top corner', 'crease', '*'], endState: [complete], allowableVariations: ['Corner alignment within configured tolerance'], deviationRules: ['Interrupt if the wrong corner moves toward the bottom edge.'], recoveryTransitions: [first], confidence: 0.91 }], contentHash: undefined };
 }
 
-async function readJson(request: IncomingMessage): Promise<Record<string, unknown>> { let raw = ''; for await (const chunk of request) raw += chunk; if (!raw) return {}; try { return JSON.parse(raw) as Record<string, unknown>; } catch { throw new HttpError(400, 'VALIDATION_FAILED', 'Request body must be valid JSON.'); } }
+async function readBody(request: IncomingMessage): Promise<string> { let raw = ''; for await (const chunk of request) raw += chunk; return raw; }
+async function readJson(request: IncomingMessage): Promise<Record<string, unknown>> { const raw = await readBody(request); if (!raw) return {}; try { return JSON.parse(raw) as Record<string, unknown>; } catch { throw new HttpError(400, 'VALIDATION_FAILED', 'Request body must be valid JSON.'); } }
 class HttpError extends Error { constructor(readonly status: number, readonly code: string, message: string) { super(message); } }
 function send(response: ServerResponse, status: number, data: unknown, traceId = id()) { response.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'access-control-allow-origin': '*', 'access-control-allow-methods': 'GET,POST,PATCH,OPTIONS', 'access-control-allow-headers': 'content-type, authorization, x-company-id, x-member-id, idempotency-key' }); response.end(JSON.stringify({ data, traceId, schemaVersion: '0.1' })); }
 function event(companyId: string, eventType: string, payload: Record<string, unknown>, workflowId?: string, sessionId?: string, runId?: string) { const value: EventEnvelope = { eventId: id(), schemaVersion: '0.1', companyId, workflowId, sessionId, runId, source: 'api', occurredAt: now(), traceId: id(), eventType, payload }; store.events.push(value); return value; }
@@ -59,12 +62,56 @@ async function monitorView(capture: CaptureSession, companyId: string, memberId:
   };
 }
 
+async function queueCaptureProcessing(capture: CaptureSession, asset: MediaAsset | undefined, companyId: string): Promise<void> {
+  const workflow = getWorkflow(capture.workflowId, companyId);
+  capture.state = 'processing';
+  workflow.status = 'Processing';
+  workflow.updatedAt = now();
+  if (!asset?.egressId) {
+    capture.processingStatus = 'blocked';
+    capture.processingBlockReason = 'Canonical LiveKit Egress is not available.';
+    return;
+  }
+  if (asset.state !== 'available') {
+    capture.processingStatus = 'blocked';
+    capture.processingBlockReason = 'Canonical media object is not available yet.';
+    return;
+  }
+  const metadata = getProcessingMetadata();
+  if (!metadata) {
+    capture.processingStatus = 'blocked';
+    capture.processingBlockReason = 'Pinned processing metadata is not configured.';
+    return;
+  }
+  try {
+    const handle = await startCaptureProcessing({
+      companyId,
+      workflowId: capture.workflowId,
+      captureSessionId: capture.id,
+      media: { companyId, objectKey: asset.objectKey },
+      metadata,
+      idempotencyKey: 'capture.finalize:' + capture.id,
+    });
+    capture.processingWorkflowId = handle?.workflowId;
+    capture.processingRunId = handle?.runId;
+    capture.processingStatus = handle ? 'submitted' : 'blocked';
+    capture.processingBlockReason = handle ? undefined : 'Temporal processing is not configured.';
+  } catch (error) {
+    capture.state = 'failed';
+    workflow.status = 'Processing Failed';
+    asset.state = 'failed';
+    capture.processingStatus = 'failed';
+    capture.processingBlockReason = error instanceof Error ? error.message : 'Temporal workflow submission failed.';
+    event(companyId, 'capture.processing.failed', { state: capture.state, reason: capture.processingBlockReason }, capture.workflowId, capture.id);
+  }
+}
 async function route(request: IncomingMessage, response: ServerResponse) {
   const traceId = id(); const url = new URL(request.url ?? '/', `http://${request.headers.host ?? 'localhost'}`); const method = request.method ?? 'GET';
   if (method === 'OPTIONS') { send(response, 204, null, traceId); return; }
   if (url.pathname === '/health' && method === 'GET') { send(response, 200, { status: 'ok', service: 'api', time: now() }, traceId); return; }
   const path = url.pathname.startsWith('/api/v1/') ? url.pathname.slice(4) : url.pathname;
   if (!path.startsWith('/v1/')) throw new HttpError(404, 'NOT_FOUND', 'Route was not found.');
+  if (path === '/v1/webhooks/livekit' && method === 'POST') { const raw = await readBody(request); const apiKey = process.env.LIVEKIT_WEBHOOK_API_KEY ?? process.env.LIVEKIT_API_KEY; const apiSecret = process.env.LIVEKIT_WEBHOOK_API_SECRET ?? process.env.LIVEKIT_API_SECRET; if (!apiKey || !apiSecret) throw new HttpError(503, 'EXTERNAL_PROVIDER_UNAVAILABLE', 'LiveKit webhook verification is not configured.'); let webhook; try { webhook = await new WebhookReceiver(apiKey, apiSecret).receive(raw, request.headers.authorization); } catch (error) { throw new HttpError(401, 'UNAUTHENTICATED', error instanceof Error ? error.message : 'LiveKit webhook verification failed.'); } if (webhook.event !== 'egress_ended' || !webhook.egressInfo) { send(response, 200, { received: true, handled: false, event: webhook.event }, traceId); return; } const info = webhook.egressInfo; const asset = [...store.mediaAssets.values()].find((value) => value.egressId === info.egressId); if (!asset) { send(response, 202, { received: true, handled: false, reason: 'No matching media asset.' }, traceId); return; } const capture = getCapture(asset.captureSessionId, asset.companyId); if (info.status === EgressStatus.EGRESS_COMPLETE && !info.error) { asset.state = 'available'; await queueCaptureProcessing(capture, asset, asset.companyId); } else { asset.state = 'failed'; capture.state = 'failed'; capture.processingStatus = 'failed'; capture.processingBlockReason = info.error || 'LiveKit Egress ended without a complete media object.'; getWorkflow(capture.workflowId, asset.companyId).status = 'Processing Failed'; } event(asset.companyId, 'capture.egress.ended', { egressId: info.egressId, status: info.status, mediaAssetState: asset.state, processingStatus: capture.processingStatus }, capture.workflowId, capture.id); send(response, 200, { received: true, handled: true, egressId: info.egressId, mediaAsset: asset, processingStatus: capture.processingStatus }, traceId); return; }
   const { companyId, memberId } = parseTenantContext(request.headers);
   const parts = path.split('/').filter(Boolean).slice(1); const payload = ['POST', 'PATCH', 'PUT'].includes(method) ? await readJson(request) : {};
   if (parts[0] === 'capture-token' && parts.length === 1 && method === 'POST') { const sessionId = String(payload.sessionId ?? ''); const workflowId = String(payload.workflowId ?? ''); const capture = getCapture(sessionId, companyId); if (workflowId !== capture.workflowId) throw new HttpError(403, 'FORBIDDEN_TENANT', 'The capture session does not belong to the requested workflow.'); if (String(payload.memberId ?? '') !== memberId) throw new HttpError(403, 'FORBIDDEN_TENANT', 'The token member must match the authenticated request member.'); if (!liveKitConfigured) throw new HttpError(503, 'EXTERNAL_PROVIDER_UNAVAILABLE', 'LiveKit credentials are not configured.'); const issued = await issueLiveKitToken({ companyId, memberId, workflowId: capture.workflowId, sessionId: capture.id, role: 'publisher' }); send(response, 200, issued, traceId); return; }
@@ -75,10 +122,10 @@ async function route(request: IncomingMessage, response: ServerResponse) {
   if (parts[0] === 'workflows' && parts[2] === 'capture-sessions' && parts.length === 3 && method === 'POST') { const workflow = getWorkflow(parts[1]!, companyId); if (workflow.family !== 'golden_run') throw new HttpError(409, 'CONFLICT', 'Only Golden Run workflows can capture.'); const capture: CaptureSession = { id: id(), workflowId: workflow.id, companyId, state: 'preparing' }; store.captures.set(capture.id, capture); event(companyId, 'capture.created', { state: capture.state }, workflow.id, capture.id); send(response, 201, { ...capture, connectionStatus: 'disconnected', roomName: `company-${companyId}-workflow-${workflow.id}` }, traceId); return; }
   if (parts[0] === 'capture-sessions' && parts.length === 2 && method === 'GET') { const capture = getCapture(parts[1]!, companyId); send(response, 200, { ...capture, connectionStatus: capture.state === 'active' ? 'connecting' : 'disconnected' }, traceId); return; }
   if (parts[0] === 'capture-sessions' && parts[2] === 'start' && parts.length === 3 && method === 'POST') { const capture = getCapture(parts[1]!, companyId); const workflow = getWorkflow(capture.workflowId, companyId); const objectKey = canonicalObjectKey(companyId, capture.id); const asset: MediaAsset = { id: id(), companyId, captureSessionId: capture.id, state: 'pending', objectKey }; if (getCanonicalEgressConfig()) { try { const egress = await startCanonicalEgress({ companyId, workflowId: capture.workflowId, sessionId: capture.id }); capture.egressId = egress.egressId; asset.egressId = egress.egressId; asset.state = 'uploading'; } catch (error) { throw new HttpError(502, 'EXTERNAL_PROVIDER_UNAVAILABLE', error instanceof Error ? error.message : 'Canonical LiveKit Egress could not start.'); } } store.mediaAssets.set(asset.id, asset); capture.mediaAssetId = asset.id; capture.state = 'active'; capture.startedAt ??= now(); workflow.status = 'Capturing'; workflow.updatedAt = now(); event(companyId, 'capture.started', { state: capture.state, egressStatus: asset.egressId ? 'recording' : 'blocked' }, capture.workflowId, capture.id); send(response, 200, { ...capture, connectionStatus: 'connecting', roomName: 'company-' + companyId + '-workflow-' + capture.workflowId, mediaAsset: asset, egressStatus: asset.egressId ? 'recording' : 'blocked' }, traceId); return; }
-  if (parts[0] === 'capture-sessions' && parts[2] === 'stop' && parts.length === 3 && method === 'POST') { const capture = getCapture(parts[1]!, companyId); if (capture.egressId) { try { await stopCanonicalEgress(capture.egressId); } catch (error) { throw new HttpError(502, 'EXTERNAL_PROVIDER_UNAVAILABLE', error instanceof Error ? error.message : 'Canonical LiveKit Egress could not stop.'); } } capture.state = 'processing'; capture.endedAt = now(); const workflow = getWorkflow(capture.workflowId, companyId); workflow.status = 'Processing'; workflow.updatedAt = now(); const asset = capture.mediaAssetId ? store.mediaAssets.get(capture.mediaAssetId) : undefined; if (asset) asset.state = 'pending'; event(companyId, 'capture.ended', { state: capture.state, egressStatus: capture.egressId ? 'stopped_waiting_for_object' : 'blocked' }, capture.workflowId, capture.id); send(response, 200, { ...capture, connectionStatus: 'disconnected', mediaAsset: asset, egressStatus: capture.egressId ? 'stopped_waiting_for_object' : 'blocked' }, traceId); return; }
+  if (parts[0] === 'capture-sessions' && parts[2] === 'stop' && parts.length === 3 && method === 'POST') { const capture = getCapture(parts[1]!, companyId); if (capture.egressId) { try { await stopCanonicalEgress(capture.egressId); } catch (error) { throw new HttpError(502, 'EXTERNAL_PROVIDER_UNAVAILABLE', error instanceof Error ? error.message : 'Canonical LiveKit Egress could not stop.'); } } const workflow = getWorkflow(capture.workflowId, companyId); capture.state = capture.egressId ? 'finalizing' : 'processing'; capture.endedAt = now(); workflow.status = 'Processing'; workflow.updatedAt = now(); const asset = capture.mediaAssetId ? store.mediaAssets.get(capture.mediaAssetId) : undefined; if (asset) asset.state = 'pending'; if (!capture.egressId) await queueCaptureProcessing(capture, asset, companyId); event(companyId, 'capture.ended', { state: capture.state, egressStatus: capture.egressId ? 'stopped_waiting_for_object' : 'blocked', processingStatus: capture.processingStatus }, capture.workflowId, capture.id); send(response, 200, { ...capture, connectionStatus: 'disconnected', mediaAsset: asset, egressStatus: capture.egressId ? 'stopped_waiting_for_object' : 'blocked' }, traceId); return; }
   if (parts[0] === 'capture-sessions' && parts[2] === 'monitor' && parts.length === 3 && method === 'GET') { const capture = getCapture(parts[1]!, companyId); send(response, 200, await monitorView(capture, companyId, memberId), traceId); return; }
   if (parts[0] === 'media-assets' && parts.length === 2 && method === 'GET') { send(response, 200, getMediaAsset(parts[1]!, companyId), traceId); return; }
-  if (parts[0] === 'capture-sessions' && parts[2] === 'processing' && parts.length === 3 && method === 'GET') { const capture = getCapture(parts[1]!, companyId); const done = capture.state === 'completed'; send(response, 200, { sessionId: capture.id, status: done ? 'completed' : 'queued', progress: done ? 100 : 10, message: done ? 'Procedure graph draft is ready.' : 'Processing is waiting for the durable worker.', graphId: done ? getWorkflow(capture.workflowId, companyId).graph?.id : undefined }, traceId); return; }
+  if (parts[0] === 'capture-sessions' && parts[2] === 'processing' && parts.length === 3 && method === 'GET') { const capture = getCapture(parts[1]!, companyId); const done = capture.state === 'completed'; send(response, 200, { sessionId: capture.id, status: done ? 'completed' : 'queued', progress: done ? 100 : 10, message: done ? 'Procedure graph draft is ready.' : capture.processingStatus === 'submitted' ? 'Temporal processing workflow is running.' : capture.processingBlockReason ?? 'Temporal processing is blocked until a durable worker is configured.', graphId: done ? getWorkflow(capture.workflowId, companyId).graph?.id : undefined, workflowId: capture.processingWorkflowId, processingStatus: capture.processingStatus }, traceId); return; }
   if (parts[0] === 'workflows' && parts[2] === 'procedure-graph' && parts.length === 3 && method === 'GET') { const workflow = getWorkflow(parts[1]!, companyId); workflow.graph ??= graphFor(workflow.id); send(response, 200, workflow.graph, traceId); return; }
   if (parts[0] === 'workflows' && parts[2] === 'procedure-graph' && parts.length === 3 && method === 'PATCH') { const workflow = getWorkflow(parts[1]!, companyId); const graph = payload.graph as ProcedureGraph | undefined; if (!graph) throw new HttpError(400, 'VALIDATION_FAILED', 'graph is required.'); workflow.graph = { ...graph, published: false }; workflow.status = 'Needs Review'; workflow.updatedAt = now(); event(companyId, 'procedure.draft.updated', { version: workflow.graph.version }, workflow.id); send(response, 200, workflow.graph, traceId); return; }
   if (parts[0] === 'workflows' && parts[2] === 'procedure-graph' && parts[3] === 'publish' && parts.length === 4 && method === 'POST') { const workflow = getWorkflow(parts[1]!, companyId); const graph = (payload.graph as ProcedureGraph | undefined) ?? workflow.graph ?? graphFor(workflow.id); workflow.graph = { ...graph, published: true, contentHash: createHash('sha256').update(JSON.stringify(graph)).digest('hex') }; workflow.status = 'Published'; workflow.updatedAt = now(); event(companyId, 'procedure.published', { version: workflow.graph.version, contentHash: workflow.graph.contentHash }, workflow.id); send(response, 200, workflow.graph, traceId); return; }

@@ -84,6 +84,24 @@ export const MediaAssetStateSchema = z.enum([
 ]);
 export type MediaAssetState = z.infer<typeof MediaAssetStateSchema>;
 
+export const MediaObjectReferenceSchema = z.object({
+  companyId: CompanyIdSchema,
+  objectKey: z.string().min(1),
+  sha256: z.string().regex(/^[a-f0-9]{64}$/i).optional(),
+});
+export type MediaObjectReference = z.infer<typeof MediaObjectReferenceSchema>;
+
+export const ProcessingMetadataSchema = z.object({
+  modelId: z.string().min(1),
+  modelVersion: z.string().min(1),
+  adapterVersion: z.string().min(1),
+  promptVersion: z.string().min(1),
+  decodingParameters: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])),
+  inputMediaHashes: z.array(z.string().min(1)),
+  retrievedEvidenceIds: z.array(IdSchema)
+});
+export type ProcessingMetadata = z.infer<typeof ProcessingMetadataSchema>;
+
 export const ProcedureStateSchema = z.object({
   id: IdSchema,
   label: z.string().min(1),

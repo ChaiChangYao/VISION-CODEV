@@ -6,6 +6,8 @@ Use one physical Android phone or iPhone, one Bluetooth headset, the rear camera
 
 Configure `EXPO_PUBLIC_LIVEKIT_URL`, `EXPO_PUBLIC_CAPTURE_TOKEN_ENDPOINT`, company/member/workflow/session IDs, and a reachable API. Confirm the app stays foregrounded and the screen stays awake during capture.
 
+Configure LiveKit to send signed Egress webhooks to `/v1/webhooks/livekit`. The API marks the canonical asset available and submits Temporal processing only after a verified `egress_ended` completion; stopping Egress alone is not proof that the object is persisted.
+
 ## Evidence to collect
 
 1. A workflow creation response and workflow ID.
@@ -19,4 +21,3 @@ Configure `EXPO_PUBLIC_LIVEKIT_URL`, `EXPO_PUBLIC_CAPTURE_TOKEN_ENDPOINT`, compa
 9. Completion report containing deviation and recovery history.
 
 Missing LiveKit credentials, external provider credentials, hardware, or evaluation recordings must be recorded as explicit blocked gates. They must never be replaced with simulated green success.
-
