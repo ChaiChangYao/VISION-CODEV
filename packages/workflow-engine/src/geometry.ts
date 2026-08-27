@@ -22,7 +22,8 @@ export interface NormalizedPaperGeometry {
 export function normalizePaperGeometry(corners: PaperCorners): NormalizedPaperGeometry {
   const center = centroid(corners);
   const ordered = [...corners].sort(
-    (a, b) => Math.atan2(a.y - center.y, a.x - center.x) - Math.atan2(b.y - center.y, b.x - center.x),
+    (a, b) =>
+      Math.atan2(a.y - center.y, a.x - center.x) - Math.atan2(b.y - center.y, b.x - center.x),
   );
   const minX = Math.min(...ordered.map((point) => point.x));
   const maxX = Math.max(...ordered.map((point) => point.x));
@@ -32,7 +33,10 @@ export function normalizePaperGeometry(corners: PaperCorners): NormalizedPaperGe
   const height = maxY - minY;
   if (width <= 0 || height <= 0) throw new Error('Paper corners must enclose a positive area.');
 
-  const normalized = ordered.map((point) => ({ x: (point.x - minX) / width, y: (point.y - minY) / height })) as unknown as PaperCorners;
+  const normalized = ordered.map((point) => ({
+    x: (point.x - minX) / width,
+    y: (point.y - minY) / height,
+  })) as unknown as PaperCorners;
   return {
     corners: normalized,
     width,
@@ -49,6 +53,9 @@ export function edgeAlignmentScore(corners: PaperCorners): number {
   return Math.max(0, 1 - (oppositeWidth + oppositeHeight) / 2);
 }
 
-export function isVisiblePaperObservation(observation: PaperCraneGeometryObservation, minimumVisibility = 0.7): boolean {
+export function isVisiblePaperObservation(
+  observation: PaperCraneGeometryObservation,
+  minimumVisibility = 0.7,
+): boolean {
   return !observation.handOccluded && observation.visibilityScore >= minimumVisibility;
 }

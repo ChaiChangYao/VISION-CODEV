@@ -73,7 +73,11 @@ export const paperCraneFixtures: readonly PaperCraneReplayFixture[] = [
     fixtureId: 'paper-crane-delayed-correct',
     scenario: 'delayed-but-correct',
     policy: { expected: expectation },
-    observations: [observation(0, 'triangle'), observation(500, 'triangle'), observation(1000, 'diagonal-right')],
+    observations: [
+      observation(0, 'triangle'),
+      observation(500, 'triangle'),
+      observation(1000, 'diagonal-right'),
+    ],
     expectedDecision: 'ADVANCED',
   },
   {
@@ -88,7 +92,9 @@ export const paperCraneFixtures: readonly PaperCraneReplayFixture[] = [
     fixtureId: 'paper-crane-occluded-uncertain',
     scenario: 'occluded-uncertain',
     policy: { expected: expectation },
-    observations: [observation(1000, 'diagonal-left', { handOccluded: true, visibilityScore: 0.4 })],
+    observations: [
+      observation(1000, 'diagonal-left', { handOccluded: true, visibilityScore: 0.4 }),
+    ],
     expectedDecision: 'REQUEST_VISIBILITY',
   },
   {

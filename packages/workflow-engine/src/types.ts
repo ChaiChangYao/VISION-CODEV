@@ -106,16 +106,14 @@ export interface RecoveryTransition {
   toStateId: string;
   instruction: string;
   approved: true;
-  provenance: Extract<ProvenanceClass, 'EXPERT_ASSERTION' | 'REVIEWER_CORRECTION' | 'PUBLISHED_REQUIREMENT'>;
+  provenance: Extract<
+    ProvenanceClass,
+    'EXPERT_ASSERTION' | 'REVIEWER_CORRECTION' | 'PUBLISHED_REQUIREMENT'
+  >;
 }
 
 export type PaperFoldState =
-  | 'flat'
-  | 'diagonal-left'
-  | 'diagonal-right'
-  | 'triangle'
-  | 'completed'
-  | 'unknown';
+  'flat' | 'diagonal-left' | 'diagonal-right' | 'triangle' | 'completed' | 'unknown';
 
 export interface Point2D {
   x: number;
@@ -150,7 +148,12 @@ export type PaperCraneDecision =
   | { type: 'WAIT'; status: 'observing' | 'persisting'; reason: string }
   | { type: 'ADVANCED'; status: 'clear'; reason: string }
   | { type: 'REQUEST_VISIBILITY'; status: 'uncertain'; reason: string }
-  | { type: 'INTERRUPT'; status: 'recovery_required'; recovery: RecoveryTransition; reason: string };
+  | {
+      type: 'INTERRUPT';
+      status: 'recovery_required';
+      recovery: RecoveryTransition;
+      reason: string;
+    };
 
 export interface InductionRequest {
   workflowId: string;
