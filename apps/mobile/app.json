@@ -1,0 +1,51 @@
+{
+  "expo": {
+    "name": "Vision Codef Capture",
+    "slug": "vision-codef-capture",
+    "version": "0.1.0",
+    "orientation": "default",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "scheme": "visioncodef",
+    "ios": {
+      "bundleIdentifier": "com.visioncodef.capture",
+      "supportsTablet": false,
+      "requireFullScreen": true,
+      "infoPlist": {
+        "NSCameraUsageDescription": "Vision Codef uses the camera to capture an active Golden Run session.",
+        "NSMicrophoneUsageDescription": "Vision Codef uses the microphone to capture technician audio during an active session."
+      }
+    },
+    "android": {
+      "package": "com.visioncodef.capture",
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.WAKE_LOCK"
+      ],
+      "softwareKeyboardLayoutMode": "pan"
+    },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow Vision Codef to use the camera during an active capture session.",
+          "microphonePermission": "Allow Vision Codef to use the microphone during an active capture session.",
+          "recordAudioAndroid": true
+        }
+      ],
+      [
+        "expo-screen-orientation",
+        {
+          "initialOrientation": "DEFAULT"
+        }
+      ],
+      "@livekit/react-native-expo-plugin",
+      "@config-plugins/react-native-webrtc"
+    ],
+    "extra": {
+      "captureContractVersion": "0.1",
+      "mediaPlane": "livekit-egress-canonical"
+    }
+  }
+}
