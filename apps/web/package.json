@@ -14,6 +14,7 @@
   "dependencies": {
     "@vision-codef/contracts": "workspace:*",
     "@vision-codef/ui": "workspace:*",
+    "livekit-client": "2.22.1",
     "next": "^15.5.2",
     "react": "^19.1.1",
     "react-dom": "^19.1.1"

@@ -38,7 +38,7 @@ export class PhoneCaptureSession {
     this.recoveryBuffer = recoveryBuffer;
     this.client = new LiveKitPhoneClient({
       ...options,
-      onConnected: () => this.apply({ type: 'ROOM_CONNECTED' }),
+      onConnected: () => this.apply(this.machine.capture === 'paused' || this.machine.capture === 'active' ? { type: 'RECONNECTED' } : { type: 'ROOM_CONNECTED' }),
       onReconnecting: () => this.apply({ type: 'RECONNECTING' }),
       onReconnected: () => this.apply({ type: 'RECONNECTED' }),
       onDisconnected: (reason) =>
@@ -166,18 +166,23 @@ export class PhoneCaptureSession {
   }
 
   private readonly onAppStateChange = (nextState: AppStateStatus): void => {
-    if (nextState !== 'active' && this.machine.capture === 'active') {
+    const captureActive = this.machine.capture === 'active' || this.machine.capture === 'paused';
+    if (nextState !== 'active' && captureActive && this.machine.connection !== 'reconnecting') {
+      this.apply({ type: 'RECONNECTING' });
       this.apply({ type: 'PAUSE', reason: 'app_backgrounded' });
+      void this.client.disconnect(true);
+      return;
     }
-    if (
-      nextState === 'active' &&
-      this.machine.capture === 'paused' &&
-      this.machine.connection === 'connected'
-    ) {
-      this.apply({ type: 'RESUME' });
+    if (nextState === 'active' && this.machine.capture === 'paused' && this.machine.connection === 'reconnecting') {
+      void this.client.connect().then(() => {
+        if (this.machine.capture === 'paused' && this.machine.connection === 'connected') {
+          this.apply({ type: 'RESUME' });
+        }
+      }).catch((error: unknown) => {
+        this.apply({ type: 'FAILED', error: error instanceof Error ? error.message : String(error) });
+      });
     }
   };
-
   private apply(event: CaptureEvent): void {
     const next = transition(this.machine, event).to;
     if (next === this.machine) return;

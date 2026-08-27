@@ -31,6 +31,7 @@ export class LiveKitPhoneClient {
   private localVideo: LocalVideoTrack | undefined;
   private localAudio: LocalAudioTrack | undefined;
   private facingMode: FacingMode;
+  private suppressDisconnectEvent = false;
 
   constructor(options: LiveKitPhoneClientOptions) {
     this.options = options;
@@ -86,7 +87,8 @@ export class LiveKitPhoneClient {
     }
   }
 
-  async disconnect(): Promise<void> {
+  async disconnect(silent = false): Promise<void> {
+    this.suppressDisconnectEvent = silent;
     const room = this.room;
     this.room = undefined;
     this.localVideo = undefined;
@@ -125,9 +127,13 @@ export class LiveKitPhoneClient {
     room.on(RoomEvent.Connected, () => this.options.onConnected?.());
     room.on(RoomEvent.Reconnecting, () => this.options.onReconnecting?.());
     room.on(RoomEvent.Reconnected, () => this.options.onReconnected?.());
-    room.on(RoomEvent.Disconnected, (reason) =>
-      this.options.onDisconnected?.(String(reason ?? 'unknown')),
-    );
+    room.on(RoomEvent.Disconnected, (reason) => {
+      if (this.suppressDisconnectEvent) {
+        this.suppressDisconnectEvent = false;
+        return;
+      }
+      this.options.onDisconnected?.(String(reason ?? 'unknown'));
+    });
   }
 }
 

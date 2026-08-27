@@ -4,6 +4,7 @@ import { URL } from 'node:url';
 import { WorkflowIntentSchema, type EventEnvelope, type ProcedureGraph, type WorkflowIntent } from '@vision-codef/contracts';
 import { DevelopmentStore, type CaptureSession, type DeploymentRun, type Workflow } from './store.js';
 import { evaluatePaperCraneObservation, PAPER_CRANE_POLICY } from './paper-crane.js';
+import { issueLiveKitToken } from './livekit-token.js';
 import { parseTenantContext, TenantContextError } from './tenant-context.js';
 import type { DeviationState } from '@vision-codef/workflow-engine';
 
@@ -40,14 +41,31 @@ function getWorkflow(value: string, expectedCompanyId: string) { const workflow 
 function getCapture(value: string, expectedCompanyId: string) { const capture = store.captures.get(value); if (!capture || capture.companyId !== expectedCompanyId) throw new HttpError(404, 'NOT_FOUND', 'Capture session was not found.'); return capture; }
 function getDeployment(value: string, expectedCompanyId: string) { const run = store.deployments.get(value); if (!run || run.companyId !== expectedCompanyId) throw new HttpError(404, 'NOT_FOUND', 'Deployment run was not found.'); return run; }
 
+async function monitorView(capture: CaptureSession, companyId: string, memberId: string) {
+  const token = liveKitConfigured
+    ? await issueLiveKitToken({ companyId, memberId, workflowId: capture.workflowId, sessionId: capture.id, role: 'viewer' })
+    : undefined;
+  return {
+    sessionId: capture.id,
+    roomName: 'company-' + companyId + '-workflow-' + capture.workflowId,
+    serverUrl: process.env.LIVEKIT_URL ?? '',
+    viewerToken: token?.token ?? '',
+    status: liveKitConfigured ? 'waiting' : 'disconnected',
+    audioConnected: false,
+    videoConnected: false,
+    reason: liveKitConfigured ? 'Waiting for phone publisher.' : 'LiveKit credentials are not configured.',
+  };
+}
+
 async function route(request: IncomingMessage, response: ServerResponse) {
   const traceId = id(); const url = new URL(request.url ?? '/', `http://${request.headers.host ?? 'localhost'}`); const method = request.method ?? 'GET';
   if (method === 'OPTIONS') { send(response, 204, null, traceId); return; }
   if (url.pathname === '/health' && method === 'GET') { send(response, 200, { status: 'ok', service: 'api', time: now() }, traceId); return; }
   const path = url.pathname.startsWith('/api/v1/') ? url.pathname.slice(4) : url.pathname;
   if (!path.startsWith('/v1/')) throw new HttpError(404, 'NOT_FOUND', 'Route was not found.');
-  const { companyId } = parseTenantContext(request.headers);
+  const { companyId, memberId } = parseTenantContext(request.headers);
   const parts = path.split('/').filter(Boolean).slice(1); const payload = ['POST', 'PATCH', 'PUT'].includes(method) ? await readJson(request) : {};
+  if (parts[0] === 'capture-token' && parts.length === 1 && method === 'POST') { const sessionId = String(payload.sessionId ?? ''); const workflowId = String(payload.workflowId ?? ''); const capture = getCapture(sessionId, companyId); if (workflowId !== capture.workflowId) throw new HttpError(403, 'FORBIDDEN_TENANT', 'The capture session does not belong to the requested workflow.'); if (String(payload.memberId ?? '') !== memberId) throw new HttpError(403, 'FORBIDDEN_TENANT', 'The token member must match the authenticated request member.'); if (!liveKitConfigured) throw new HttpError(503, 'EXTERNAL_PROVIDER_UNAVAILABLE', 'LiveKit credentials are not configured.'); const issued = await issueLiveKitToken({ companyId, memberId, workflowId: capture.workflowId, sessionId: capture.id, role: 'publisher' }); send(response, 200, issued, traceId); return; }
   if (parts[0] === 'workflows' && parts[1] === 'intent' && method === 'POST') { send(response, 200, classify(String(payload.brief ?? payload.text ?? '')), traceId); return; }
   if (parts[0] === 'workflows' && parts.length === 1 && method === 'GET') { send(response, 200, [...store.workflows.values()].filter((value) => value.companyId === companyId), traceId); return; }
   if (parts[0] === 'workflows' && parts.length === 1 && method === 'POST') { const objective = String(payload.brief ?? payload.objective ?? payload.message ?? '').trim(); if (!objective) throw new HttpError(400, 'VALIDATION_FAILED', 'brief is required.'); const intent = classify(objective); if (intent.family === 'ambiguous') { send(response, 200, { intent, requiresClarification: true }, traceId); return; } const workflow: Workflow = { id: id(), companyId, title: objective.slice(0, 72), family: intent.family, objective, status: 'Draft', createdAt: now(), updatedAt: now() }; store.workflows.set(workflow.id, workflow); event(companyId, 'workflow.created', { intent }, workflow.id); send(response, 201, { ...workflow, intent, stage: 'train', description: objective }, traceId); return; }
@@ -56,7 +74,7 @@ async function route(request: IncomingMessage, response: ServerResponse) {
   if (parts[0] === 'capture-sessions' && parts.length === 2 && method === 'GET') { const capture = getCapture(parts[1]!, companyId); send(response, 200, { ...capture, connectionStatus: capture.state === 'active' ? 'connecting' : 'disconnected' }, traceId); return; }
   if (parts[0] === 'capture-sessions' && parts[2] === 'start' && parts.length === 3 && method === 'POST') { const capture = getCapture(parts[1]!, companyId); capture.state = 'active'; capture.startedAt ??= now(); event(companyId, 'capture.started', { state: capture.state }, capture.workflowId, capture.id); send(response, 200, { ...capture, connectionStatus: 'connecting', roomName: `company-${companyId}-workflow-${capture.workflowId}` }, traceId); return; }
   if (parts[0] === 'capture-sessions' && parts[2] === 'stop' && parts.length === 3 && method === 'POST') { const capture = getCapture(parts[1]!, companyId); capture.state = 'processing'; capture.endedAt = now(); const workflow = getWorkflow(capture.workflowId, companyId); workflow.status = 'Processing'; workflow.updatedAt = now(); event(companyId, 'capture.ended', { state: capture.state }, capture.workflowId, capture.id); send(response, 200, { ...capture, connectionStatus: 'disconnected', mediaAsset: { id: id(), state: liveKitConfigured ? 'available' : 'pending', objectKey: liveKitConfigured ? `companies/${companyId}/captures/${capture.id}/egress.mp4` : undefined } }, traceId); return; }
-  if (parts[0] === 'capture-sessions' && parts[2] === 'monitor' && parts.length === 3 && method === 'GET') { const capture = getCapture(parts[1]!, companyId); const configured = liveKitConfigured; send(response, 200, { sessionId: capture.id, roomName: `company-${companyId}-workflow-${capture.workflowId}`, serverUrl: process.env.LIVEKIT_URL ?? '', viewerToken: '', status: configured ? 'waiting' : 'disconnected', audioConnected: false, videoConnected: false, reason: configured ? 'Waiting for phone publisher.' : 'LiveKit credentials are not configured.' }, traceId); return; }
+  if (parts[0] === 'capture-sessions' && parts[2] === 'monitor' && parts.length === 3 && method === 'GET') { const capture = getCapture(parts[1]!, companyId); send(response, 200, await monitorView(capture, companyId, memberId), traceId); return; }
   if (parts[0] === 'capture-sessions' && parts[2] === 'processing' && parts.length === 3 && method === 'GET') { const capture = getCapture(parts[1]!, companyId); const done = capture.state === 'completed'; send(response, 200, { sessionId: capture.id, status: done ? 'completed' : 'queued', progress: done ? 100 : 10, message: done ? 'Procedure graph draft is ready.' : 'Processing is waiting for the durable worker.', graphId: done ? getWorkflow(capture.workflowId, companyId).graph?.id : undefined }, traceId); return; }
   if (parts[0] === 'workflows' && parts[2] === 'procedure-graph' && parts.length === 3 && method === 'GET') { const workflow = getWorkflow(parts[1]!, companyId); workflow.graph ??= graphFor(workflow.id); send(response, 200, workflow.graph, traceId); return; }
   if (parts[0] === 'workflows' && parts[2] === 'procedure-graph' && parts.length === 3 && method === 'PATCH') { const workflow = getWorkflow(parts[1]!, companyId); const graph = payload.graph as ProcedureGraph | undefined; if (!graph) throw new HttpError(400, 'VALIDATION_FAILED', 'graph is required.'); workflow.graph = { ...graph, published: false }; workflow.status = 'Needs Review'; workflow.updatedAt = now(); event(companyId, 'procedure.draft.updated', { version: workflow.graph.version }, workflow.id); send(response, 200, workflow.graph, traceId); return; }

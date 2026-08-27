@@ -149,7 +149,7 @@ async function requestLiveKitToken(
 ): Promise<string> {
   const response = await fetch(endpoint, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', 'x-company-id': input.companyId, 'x-member-id': input.memberId },
     body: JSON.stringify(input),
   });
   if (!response.ok) throw new Error(`Capture token request failed (${response.status}).`);

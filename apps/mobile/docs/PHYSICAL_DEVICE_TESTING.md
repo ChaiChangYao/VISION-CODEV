@@ -6,7 +6,7 @@ Expo Go is not an acceptance environment. Build a development client or standalo
 
 Run on one real Android phone **or** iPhone with one Bluetooth headset and the current stable Chrome desktop browser:
 
-1. Configure `EXPO_PUBLIC_LIVEKIT_URL`, `EXPO_PUBLIC_CAPTURE_TOKEN_ENDPOINT`, `EXPO_PUBLIC_COMPANY_ID`, `EXPO_PUBLIC_MEMBER_ID`, `EXPO_PUBLIC_WORKFLOW_ID`, and `EXPO_PUBLIC_SESSION_ID` in a local, uncommitted environment.
+1. Configure `EXPO_PUBLIC_LIVEKIT_URL`, `EXPO_PUBLIC_CAPTURE_TOKEN_ENDPOINT` (for local API: `/v1/capture-token`), `EXPO_PUBLIC_COMPANY_ID`, `EXPO_PUBLIC_MEMBER_ID`, `EXPO_PUBLIC_WORKFLOW_ID`, and `EXPO_PUBLIC_SESSION_ID` in a local, uncommitted environment. The mobile token request must include the company/member headers and the session must already exist in the API.
 2. Build with `pnpm --filter @vision-codef/mobile prebuild` followed by the platform development build.
 3. Grant camera and microphone permissions.
 4. Start a session with the rear camera in the mounted orientation.

@@ -12,7 +12,8 @@
   },
   "dependencies": {
     "@vision-codef/contracts": "workspace:*",
-    "@vision-codef/workflow-engine": "workspace:*"
+    "@vision-codef/workflow-engine": "workspace:*",
+    "livekit-server-sdk": "^2.18.0"
   },
   "devDependencies": {
     "@types/node": "^24.3.0",

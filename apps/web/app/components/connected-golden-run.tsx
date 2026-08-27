@@ -1,14 +1,16 @@
-﻿'use client';
+'use client';
 
 import { useCallback, useEffect, useState } from 'react';
 import { Badge, Button, Card, Icon, StateNotice } from '@vision-codef/ui';
-import { getApiClient, type CaptureSessionView, type DeploymentView, type ProcessingStatus, ApiClientError, isDemoFixturesEnabled } from '../../src/lib/api-client';
+import { getApiClient, type CaptureSessionView, type DeploymentView, type LiveKitMonitor as LiveKitMonitorView, type ProcessingStatus, ApiClientError, isDemoFixturesEnabled } from '../../src/lib/api-client';
 import { demoGraph } from '../../src/lib/demo-data';
+import { LiveKitMonitor } from './livekit-monitor';
 
 type Stage = 'train' | 'approve' | 'deploy';
 
 export function ConnectedGoldenRun({ workflowId, stage }: { workflowId: string; stage: Stage }) {
   const [capture, setCapture] = useState<CaptureSessionView>();
+  const [monitor, setMonitor] = useState<LiveKitMonitorView>();
   const [processing, setProcessing] = useState<ProcessingStatus>();
   const [deployment, setDeployment] = useState<DeploymentView>();
   const [graph, setGraph] = useState(demoGraph);
@@ -20,8 +22,10 @@ export function ConnectedGoldenRun({ workflowId, stage }: { workflowId: string; 
 
   const reportError = (value: unknown) => setError(value instanceof ApiClientError ? value.message : value instanceof Error ? value.message : String(value));
   const loadGraph = useCallback(async () => { try { const value = await api.getProcedureGraph(workflowId); setGraph(value); setInstruction(value.steps[0]?.instruction ?? ''); } catch (value) { reportError(value); } }, [api, workflowId]);
+  const loadMonitor = useCallback(async () => { if (!capture) return; try { setMonitor(await api.getMonitor(capture.id)); } catch (value) { reportError(value); } }, [api, capture]);
 
   useEffect(() => { if (stage === 'approve') void loadGraph(); }, [stage, loadGraph]);
+  useEffect(() => { if (stage !== 'train' || capture?.state !== 'active') { setMonitor(undefined); return; } void loadMonitor(); const timer = window.setInterval(() => void loadMonitor(), 3000); return () => window.clearInterval(timer); }, [capture?.id, capture?.state, loadMonitor, stage]);
 
   const createCapture = async () => { try { setError(undefined); setCapture(await api.createCaptureSession(workflowId)); setMessage('Capture session prepared. Open the native app to pair the phone.'); } catch (value) { reportError(value); } };
   const startCapture = async () => { if (!capture) return; try { setCapture(await api.startCapture(capture.id)); setMessage('Capture is active. The desktop monitor is waiting for LiveKit tracks.'); } catch (value) { reportError(value); } };
@@ -33,14 +37,14 @@ export function ConnectedGoldenRun({ workflowId, stage }: { workflowId: string; 
 
   if (stage === 'approve') return <ApprovePanel graph={graph} selectedStep={selectedStep} instruction={instruction} setSelectedStep={(index) => { setSelectedStep(index); setInstruction(graph.steps[index]?.instruction ?? ''); }} setInstruction={setInstruction} onPublish={publish} message={message} error={error} />;
   if (stage === 'deploy') return <DeployPanel deployment={deployment} onStart={startDeployment} onRecover={recover} onWrongFoldFixture={runWrongFoldFixture} message={message} error={error} />;
-  return <TrainPanel capture={capture} processing={processing} onCreate={createCapture} onStart={startCapture} onStop={stopCapture} message={message} error={error} />;
+  return <TrainPanel capture={capture} monitor={monitor} processing={processing} onCreate={createCapture} onStart={startCapture} onStop={stopCapture} message={message} error={error} />;
 }
 
 function Notice({ message, error }: { message?: string; error?: string }) { return <>{error ? <StateNotice tone="red" icon="info" title="Action could not complete">{error}</StateNotice> : null}{message ? <StateNotice tone="green" icon="check" title="Updated">{message}</StateNotice> : null}</>; }
 
-function TrainPanel({ capture, processing, onCreate, onStart, onStop, message, error }: { capture?: CaptureSessionView; processing?: ProcessingStatus; onCreate: () => void; onStart: () => void; onStop: () => void; message?: string; error?: string }) {
+function TrainPanel({ capture, monitor, processing, onCreate, onStart, onStop, message, error }: { capture?: CaptureSessionView; monitor?: LiveKitMonitorView; processing?: ProcessingStatus; onCreate: () => void; onStart: () => void; onStop: () => void; message?: string; error?: string }) {
   const active = capture?.state === 'active';
-  return <div><Notice message={message} error={error} /><div className="surface-grid"><Card className="surface-card"><div className="surface-card-header"><h2>Desktop monitor</h2><Badge tone={active ? 'green' : 'neutral'}>{active ? 'Session active' : 'Not connected'}</Badge></div><div className="surface-card-body"><div className="monitor-stage" aria-label="LiveKit desktop monitor preview"><div className="monitor-grid" /><div className="monitor-placeholder"><Icon name={active ? 'video' : 'cloud-off'} size={24} /><strong>{active ? 'Waiting for phone video' : 'Create a capture session'}</strong><small>{active ? 'The API is ready for a physical phone publisher. No media is fabricated.' : 'The session must be prepared before the native phone can pair.'}</small></div></div><div className="monitor-controls">{!capture ? <Button id="train-create-session" variant="primary" onClick={onCreate}><Icon name="plus" size={14} /> Prepare capture</Button> : capture.state === 'preparing' ? <Button id="train-start-session" variant="primary" onClick={onStart}><Icon name="play" size={14} /> Start capture</Button> : <Button id="train-stop-session" variant="danger" onClick={onStop} disabled={!active}><Icon name="stop" size={14} /> Stop and process</Button>}</div></div></Card><Card className="surface-card"><div className="surface-card-header"><h2>Processing</h2><Badge tone={processing?.status === 'completed' ? 'green' : 'neutral'}>{processing?.status ?? 'Not started'}</Badge></div><div className="surface-card-body"><div className="progress-track"><i style={{ width: `${processing?.progress ?? 0}%` }} /></div><p className="lede">{processing?.message ?? 'Stopping a capture queues transcription, observations, and procedure-graph induction.'}</p></div></Card></div></div>;
+  return <div><Notice message={message} error={error} /><div className="surface-grid"><Card className="surface-card"><div className="surface-card-header"><h2>Desktop monitor</h2><Badge tone={active ? 'green' : 'neutral'}>{active ? 'Session active' : 'Not connected'}</Badge></div><div className="surface-card-body">{monitor ? <LiveKitMonitor serverUrl={monitor.serverUrl} viewerToken={monitor.viewerToken} /> : <div className="monitor-stage" aria-label="LiveKit desktop monitor preview"><div className="monitor-grid" /><div className="monitor-placeholder"><Icon name={active ? 'video' : 'cloud-off'} size={24} /><strong>{active ? 'Waiting for phone video' : 'Create a capture session'}</strong><small>{active ? 'The API is ready for a physical phone publisher. No media is fabricated.' : 'The session must be prepared before the native phone can pair.'}</small></div></div>}<div className="monitor-controls">{!capture ? <Button id="train-create-session" variant="primary" onClick={onCreate}><Icon name="plus" size={14} /> Prepare capture</Button> : capture.state === 'preparing' ? <Button id="train-start-session" variant="primary" onClick={onStart}><Icon name="play" size={14} /> Start capture</Button> : <Button id="train-stop-session" variant="danger" onClick={onStop} disabled={!active}><Icon name="stop" size={14} /> Stop and process</Button>}</div></div></Card><Card className="surface-card"><div className="surface-card-header"><h2>Processing</h2><Badge tone={processing?.status === 'completed' ? 'green' : 'neutral'}>{processing?.status ?? 'Not started'}</Badge></div><div className="surface-card-body"><div className="progress-track"><i style={{ width: `${processing?.progress ?? 0}%` }} /></div><p className="lede">{processing?.message ?? 'Stopping a capture queues transcription, observations, and procedure-graph induction.'}</p></div></Card></div></div>;
 }
 
 function ApprovePanel({ graph, selectedStep, instruction, setSelectedStep, setInstruction, onPublish, message, error }: { graph: typeof demoGraph; selectedStep: number; instruction: string; setSelectedStep: (index: number) => void; setInstruction: (value: string) => void; onPublish: () => void; message?: string; error?: string }) {
