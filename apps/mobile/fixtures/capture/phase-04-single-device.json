@@ -1,0 +1,36 @@
+{
+  "fixtureVersion": "0.1",
+  "name": "phase-04-single-device",
+  "purpose": "Minimum physical-device proof for phone camera/microphone publish and desktop monitoring",
+  "hardware": {
+    "platform": "android-or-ios",
+    "phoneModel": "TODO",
+    "osVersion": "TODO",
+    "headset": "bluetooth",
+    "desktopBrowser": "chrome-current"
+  },
+  "capture": {
+    "camera": "rear",
+    "orientation": "portrait-or-landscape",
+    "foregroundOnly": true,
+    "screenAwake": true,
+    "livekitCanonicalEgress": true,
+    "secondCanonicalMobileUpload": false
+  },
+  "expectedEvents": [
+    "capture.preparing",
+    "livekit.connected",
+    "track.camera.published",
+    "track.microphone.published",
+    "capture.active",
+    "desktop.monitoring.verified",
+    "capture.finalizing",
+    "egress.canonical.persisted"
+  ],
+  "observed": {
+    "recordedAt": null,
+    "egressObjectId": null,
+    "desktopMonitorEvidence": null,
+    "notes": []
+  }
+}
