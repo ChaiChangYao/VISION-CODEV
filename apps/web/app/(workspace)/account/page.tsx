@@ -1,0 +1,65 @@
+import { Avatar, Badge, Button, Card, Icon, StateNotice } from '@vision-codef/ui';
+
+export default function AccountPage() {
+  return (
+    <div>
+      <div className="page-heading">
+        <div>
+          <p className="eyebrow">Account</p>
+          <h1>Account settings</h1>
+          <p className="lede">
+            Your profile and company membership. Vision Codef currently gives members equal workflow
+            capabilities.
+          </p>
+        </div>
+      </div>
+      <div className="surface-grid">
+        <Card className="surface-card">
+          <div className="surface-card-header">
+            <h2>Profile</h2>
+            <Badge tone="green">Active member</Badge>
+          </div>
+          <div className="surface-card-body">
+            <div className="device-pill" style={{ marginBottom: 19 }}>
+              <Avatar initials="AR" size="lg" />
+              <div>
+                <strong>Alex Rivera</strong>
+                <small>alex@northstar.example</small>
+              </div>
+            </div>
+            <div className="detail-list">
+              <div className="detail-row">
+                <span>Company</span>
+                <strong>Northstar Works</strong>
+              </div>
+              <div className="detail-row">
+                <span>Membership</span>
+                <strong>Company member</strong>
+              </div>
+              <div className="detail-row">
+                <span>Access model</span>
+                <strong>Equal permissions</strong>
+              </div>
+            </div>
+            <Button style={{ marginTop: 20 }} variant="secondary">
+              <Icon name="settings" size={14} /> Edit profile <Badge tone="neutral">Soon</Badge>
+            </Button>
+          </div>
+        </Card>
+        <Card className="surface-card">
+          <div className="surface-card-header">
+            <h2>Security</h2>
+          </div>
+          <div className="surface-card-body">
+            <StateNotice tone="green" icon="shield" title="Company-scoped session">
+              Your workspace data is isolated to Northstar Works.
+            </StateNotice>
+            <Button style={{ marginTop: 14 }} variant="secondary">
+              Change password <Badge tone="neutral">Soon</Badge>
+            </Button>
+          </div>
+        </Card>
+      </div>
+    </div>
+  );
+}
