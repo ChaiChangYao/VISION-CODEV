@@ -358,7 +358,10 @@ export function isDemoFixturesEnabled() {
 }
 
 export function getApiClient(config?: ApiClientConfig) {
-  return createApiClient(config);
+  const companyId = process.env.NEXT_PUBLIC_COMPANY_ID?.trim();
+  const memberId = process.env.NEXT_PUBLIC_MEMBER_ID?.trim();
+  const tenant = config?.tenant ?? (companyId && memberId ? { companyId, memberId } : undefined);
+  return createApiClient(config ? { ...config, tenant } : { tenant });
 }
 
 export type { ProcedureStep };
