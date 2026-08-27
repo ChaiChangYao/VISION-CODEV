@@ -35,12 +35,16 @@ export function withObservabilityContext<T>(context: ObservabilityContext, fn: (
 }
 
 export function serializeError(error: unknown): Record<string, unknown> {
-  if (error instanceof Error) return { name: error.name, message: error.message, stack: error.stack };
+  if (error instanceof Error)
+    return { name: error.name, message: error.message, stack: error.stack };
   return { value: error };
 }
 
 export class Logger {
-  public constructor(private readonly sink: LogSink = (record) => console.log(JSON.stringify(record)), private readonly fields: Pick<LogRecord, 'service' | 'companyId' | 'memberId'> = {}) {}
+  public constructor(
+    private readonly sink: LogSink = (record) => console.log(JSON.stringify(record)),
+    private readonly fields: Pick<LogRecord, 'service' | 'companyId' | 'memberId'> = {},
+  ) {}
 
   public child(fields: Pick<LogRecord, 'service' | 'companyId' | 'memberId'>): Logger {
     return new Logger(this.sink, { ...this.fields, ...fields });
@@ -64,10 +68,18 @@ export class Logger {
     this.sink(record);
   }
 
-  public debug(message: string, fields?: Record<string, unknown>): void { this.log('debug', message, fields); }
-  public info(message: string, fields?: Record<string, unknown>): void { this.log('info', message, fields); }
-  public warn(message: string, fields?: Record<string, unknown>): void { this.log('warn', message, fields); }
-  public error(message: string, fields?: Record<string, unknown>): void { this.log('error', message, fields); }
+  public debug(message: string, fields?: Record<string, unknown>): void {
+    this.log('debug', message, fields);
+  }
+  public info(message: string, fields?: Record<string, unknown>): void {
+    this.log('info', message, fields);
+  }
+  public warn(message: string, fields?: Record<string, unknown>): void {
+    this.log('warn', message, fields);
+  }
+  public error(message: string, fields?: Record<string, unknown>): void {
+    this.log('error', message, fields);
+  }
 }
 
 export function createLogger(service: string, sink?: LogSink): Logger {
