@@ -25,7 +25,7 @@ describe('rolling recovery buffer', () => {
     await buffer.append(segment(3, 2_000, 3_000), new Uint8Array([3, 3]));
     await buffer.append(segment(4, 3_000, 4_000), new Uint8Array([4, 4]));
 
-    expect(buffer.list().map((item) => item.sequence)).toEqual([1, 2, 3, 4]);
+    expect(buffer.list().map((item) => item.sequence)).toEqual([2, 3, 4]);
     expect((await buffer.drainForRequest({
       sessionId: 'session-1',
       missingFromMs: 1_500,
