@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "build": "tsc",
-    "start": "node dist/worker.js",
-    "dev": "node --conditions=development --import=tsx/esm --watch src/worker.ts",
+    "start": "node dist/temporal-worker.js",
+    "dev": "node --conditions=development --import=tsx/esm --watch src/temporal-worker.ts",
     "typecheck": "tsc --noEmit",
     "lint": "tsc --noEmit",
     "test": "vitest run"

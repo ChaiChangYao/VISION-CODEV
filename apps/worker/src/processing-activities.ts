@@ -1,5 +1,7 @@
 import { MediaObjectReferenceSchema, ProcessingCompletionSchema, ProcedureGraphSchema, type MediaObjectReference, type ProcessingCompletion, type ProcessingMetadata, type ProcedureGraph } from '@vision-codef/contracts';
 
+export class InvalidMediaReferenceError extends Error {}
+
 export type ProcessingActivityContext = {
   companyId: string;
   workflowId: string;
@@ -27,8 +29,9 @@ export type ProcessingActivities = {
   persistProcessingCompletion(input: ProcessingCompletion): Promise<void>;
 };
 
-function validateArtifact(value: ProcessingArtifact): ProcessingArtifact {
+function validateArtifact(value: ProcessingArtifact, expectedCompanyId: string): ProcessingArtifact {
   MediaObjectReferenceSchema.parse(value);
+  if (value.companyId !== expectedCompanyId || !value.objectKey.startsWith('companies/' + expectedCompanyId + '/')) throw new InvalidMediaReferenceError('Processing artifact is outside the requesting company boundary.');
   if (!['media', 'transcript', 'observations', 'procedure-draft'].includes(value.kind)) throw new Error('Processing activity returned an invalid artifact kind.');
   if (value.normalizedGraph) ProcedureGraphSchema.parse(value.normalizedGraph);
   return value;
@@ -36,10 +39,10 @@ function validateArtifact(value: ProcessingArtifact): ProcessingArtifact {
 
 export function createProcessingActivities(handlers: ProcessingActivityHandlers): ProcessingActivities {
   return {
-    async finalizeCapture(input) { return validateArtifact(await handlers.finalizeCapture(input)); },
-    async transcribe(input) { return validateArtifact(await handlers.transcribe(input)); },
-    async extractObservations(input) { return validateArtifact(await handlers.extractObservations(input)); },
-    async induceProcedure(input) { return validateArtifact(await handlers.induceProcedure(input)); },
+    async finalizeCapture(input) { return validateArtifact(await handlers.finalizeCapture(input), input.companyId); },
+    async transcribe(input) { return validateArtifact(await handlers.transcribe(input), input.companyId); },
+    async extractObservations(input) { return validateArtifact(await handlers.extractObservations(input), input.companyId); },
+    async induceProcedure(input) { return validateArtifact(await handlers.induceProcedure(input), input.companyId); },
     async persistProcessingCompletion(input) {
       const completion = ProcessingCompletionSchema.parse(input);
       if (!handlers.persistProcessingCompletion) throw new Error('CompletionSinkUnavailableError');

@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { PROCESSING_TASK_QUEUE } from './worker.js';
 import { createProcessingActivities, type ProcessingActivities, type ProcessingActivityHandlers } from './processing-activities.js';
 import { configuredProcessingCompletionSink } from './processing-completion-sink.js';
+import { createConfiguredProcessingProviderHandlers } from './processing-provider.js';
 
 export async function runTemporalWorker(activities: ProcessingActivities): Promise<void> {
   const address = process.env.TEMPORAL_ADDRESS;
@@ -25,4 +26,16 @@ export function createConfiguredProcessingActivities(
   const completionSink = configuredProcessingCompletionSink(env);
   if (!completionSink) throw new Error('PROCESSING_COMPLETION_URL and VISION_CODEF_PROCESSING_WEBHOOK_SECRET are required to run the processing worker.');
   return createProcessingActivities({ ...handlers, persistProcessingCompletion: completionSink });
+}
+
+export async function runConfiguredTemporalWorker(env: NodeJS.ProcessEnv = process.env): Promise<void> {
+  const handlers = createConfiguredProcessingProviderHandlers(env);
+  await runTemporalWorker(createConfiguredProcessingActivities(handlers, env));
+}
+
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  runConfiguredTemporalWorker().catch((error: unknown) => {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+  });
 }
