@@ -10,12 +10,15 @@ import { canonicalObjectKey, getCanonicalEgressConfig, startCanonicalEgress, sto
 import { getProcessingMetadata, startCaptureProcessing } from './processing-client.js';
 import { verifyProcessingCompletionSignature } from './processing-webhook.js';
 import { createMembershipDirectory } from './membership.js';
+import { createConfiguredRuntimePersistence } from './runtime-persistence.js';
 import { parseTenantContext, TenantContextError } from './tenant-context.js';
 import { GraphValidationError, publishProcedureGraph, validateProcedureGraph } from '@vision-codef/workflow-engine';
 import type { DeviationState } from '@vision-codef/workflow-engine';
 
 const port = Number(process.env.PORT ?? 4000);
-const store = new DevelopmentStore();
+const runtimePersistence = createConfiguredRuntimePersistence();
+if (process.env.NODE_ENV === 'production' && !runtimePersistence) throw new Error('PostgreSQL runtime persistence must be configured in production.');
+const store = new DevelopmentStore(runtimePersistence);
 const now = () => new Date().toISOString();
 const id = () => randomUUID();
 const liveKitConfigured = Boolean(process.env.LIVEKIT_API_KEY && process.env.LIVEKIT_API_SECRET && process.env.LIVEKIT_URL);
@@ -165,7 +168,17 @@ async function route(request: IncomingMessage, response: ServerResponse) {
   throw new HttpError(404, 'NOT_FOUND', 'Route was not found.');
 }
 
-const server = createServer(async (request, response) => { try { await route(request, response); } catch (error) { const status = error instanceof HttpError || error instanceof TenantContextError ? error.status : 500; const code = error instanceof HttpError || error instanceof TenantContextError ? error.code : 'INTERNAL_ERROR'; const message = error instanceof Error ? error.message : 'Unexpected server error.'; send(response, status, { error: { code, message, traceId: id() } }); } });
+const server = createServer(async (request, response) => {
+  try {
+    await store.ready;
+    await route(request, response);
+    await store.flush();
+  } catch (error) {
+    const status = error instanceof HttpError || error instanceof TenantContextError ? error.status : 500;
+    const code = error instanceof HttpError || error instanceof TenantContextError ? error.code : 'INTERNAL_ERROR';
+    const message = error instanceof Error ? error.message : 'Unexpected server error.';
+    send(response, status, { error: { code, message, traceId: id() } });
+  }
+});
 server.listen(port, () => console.log(`Vision Codef API listening on http://localhost:${port}`));
-process.on('SIGTERM', () => server.close());
-
+process.on('SIGTERM', () => { void store.close(); server.close(); });

@@ -34,6 +34,11 @@ export async function withTenantContext<T>(
       "SELECT set_config('app.company_id', $1, true), set_config('app.member_id', $2, true)",
       [tenant.companyId, tenant.memberId],
     );
+    const membership = await client.query(
+      'SELECT 1 FROM members WHERE company_id =  AND id =  LIMIT 1',
+      [tenant.companyId, tenant.memberId],
+    );
+    if (membership.rows.length === 0) throw new Error('Tenant member is not a member of the requested company.');
     const result = await fn(new TenantTransaction(tenant, client));
     await client.query('COMMIT');
     return result;
