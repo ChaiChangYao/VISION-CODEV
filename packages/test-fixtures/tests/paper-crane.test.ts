@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildPaperCraneMetricReport,
+  evaluatePaperCraneAcceptance,
   initialDeviationState,
   observePaperCrane,
   type PaperCraneFixtureResult,
@@ -55,22 +56,118 @@ describe('paper-crane replay fixtures', () => {
       passed: false,
       unsupportedRecoveryInvented: false,
     } satisfies PaperCraneFixtureResult;
-    const report = buildPaperCraneMetricReport([...paperCraneFixtures.map(runFixture), falseUrgent], {
-      approvedGoldenRun: false,
-      correctRecordings: 0,
-      requiredCorrectRecordings: 10,
-      deviationRecordingsByType: {},
-      requiredDeviationRecordingsPerType: 5,
-      portraitAndLandscape: false,
-      variedLighting: false,
-      occlusionCases: false,
-      annotations: false,
-      participantDisjoint: false,
-      frozenAcceptanceSet: false,
-    });
+    const report = buildPaperCraneMetricReport(
+      [...paperCraneFixtures.map(runFixture), falseUrgent],
+      {
+        approvedGoldenRun: false,
+        correctRecordings: 0,
+        requiredCorrectRecordings: 10,
+        deviationRecordingsByType: {},
+        requiredDeviationRecordingsPerType: 5,
+        portraitAndLandscape: false,
+        variedLighting: false,
+        occlusionCases: false,
+        annotations: false,
+        participantDisjoint: false,
+        frozenAcceptanceSet: false,
+      },
+    );
     expect(report.metrics.wrongFoldInterventionPrecision).toBe(2 / 3);
   });
 
+  it('fails closed until every acceptance threshold and evidence count is met', () => {
+    const report = buildPaperCraneMetricReport(paperCraneFixtures.map(runFixture), {
+      approvedGoldenRun: true,
+      correctRecordings: 20,
+      requiredCorrectRecordings: 10,
+      deviationRecordingsByType: { 'wrong-fold': 5 },
+      requiredDeviationRecordingsPerType: 5,
+      portraitAndLandscape: true,
+      variedLighting: true,
+      occlusionCases: true,
+      annotations: true,
+      participantDisjoint: true,
+      frozenAcceptanceSet: true,
+    });
+    const assessment = evaluatePaperCraneAcceptance(report);
+    expect(assessment.accepted).toBe(false);
+    expect(assessment.reasons).toContain('Recovery selection is not 10/10 approved fixtures.');
+    expect(assessment.reasons).toContain('Replay determinism is below 100%.');
+  });
+
+  it('accepts a fully evidenced threshold report', () => {
+    const results: PaperCraneFixtureResult[] = [
+      {
+        fixtureId: 'correct',
+        scenario: 'correct-transition',
+        expected: 'ADVANCED',
+        actual: 'ADVANCED',
+        passed: true,
+        unsupportedRecoveryInvented: false,
+      },
+      {
+        fixtureId: 'delayed',
+        scenario: 'delayed-but-correct',
+        expected: 'ADVANCED',
+        actual: 'ADVANCED',
+        passed: true,
+        unsupportedRecoveryInvented: false,
+      },
+      {
+        fixtureId: 'wrong',
+        scenario: 'wrong-fold',
+        expected: 'INTERRUPT',
+        actual: 'INTERRUPT',
+        passed: true,
+        interventionLatencyMs: 1200,
+        unsupportedRecoveryInvented: false,
+      },
+      {
+        fixtureId: 'occluded',
+        scenario: 'occluded-uncertain',
+        expected: 'REQUEST_VISIBILITY',
+        actual: 'REQUEST_VISIBILITY',
+        passed: true,
+        unsupportedRecoveryInvented: false,
+      },
+      {
+        fixtureId: 'replay',
+        scenario: 'induction-replay',
+        expected: 'REPLAY',
+        actual: 'REPLAY',
+        passed: true,
+        unsupportedRecoveryInvented: false,
+        whyResponseProvenanceLinked: true,
+      },
+      ...Array.from(
+        { length: 10 },
+        (_, index) =>
+          ({
+            fixtureId: `recovery-${index}`,
+            scenario: 'approved-recovery',
+            expected: 'INTERRUPT',
+            actual: 'INTERRUPT',
+            passed: true,
+            interventionLatencyMs: 1200,
+            unsupportedRecoveryInvented: false,
+          }) satisfies PaperCraneFixtureResult,
+      ),
+    ];
+    const report = buildPaperCraneMetricReport(results, {
+      approvedGoldenRun: true,
+      correctRecordings: 20,
+      requiredCorrectRecordings: 10,
+      deviationRecordingsByType: { 'wrong-fold': 5 },
+      requiredDeviationRecordingsPerType: 5,
+      portraitAndLandscape: true,
+      variedLighting: true,
+      occlusionCases: true,
+      annotations: true,
+      participantDisjoint: true,
+      frozenAcceptanceSet: true,
+    });
+    expect(evaluatePaperCraneAcceptance(report)).toEqual({ accepted: true, reasons: [] });
+  });
   it('reports fixture metrics without claiming production accuracy', () => {
     const report = buildPaperCraneMetricReport(paperCraneFixtures.map(runFixture), {
       approvedGoldenRun: true,

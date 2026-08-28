@@ -47,7 +47,9 @@ describe('physical device acceptance report harness', () => {
     report.artifacts.egressObjectId = 'egress/object.mp4';
     for (const item of report.checks) {
       item.status = 'PASS';
-      item.evidence = [{ kind: 'manual-observation', source: 'physical', reference: `${item.id}.json` }];
+      item.evidence = [
+        { kind: 'manual-observation', source: 'physical', reference: `${item.id}.json` },
+      ];
       item.observation = 'Observed and recorded by the operator.';
     }
     expect(validateReport(report)).toEqual({ errors: [], warnings: [] });
@@ -82,7 +84,9 @@ describe('physical device acceptance report harness', () => {
   it('requires a concrete blocker when a report is marked BLOCKED', () => {
     const report = createReport(15);
     report.result = 'BLOCKED';
-    expect(validateReport(report).warnings).toContain('A BLOCKED report should include a concrete blocker in notes.');
+    expect(validateReport(report).warnings).toContain(
+      'A BLOCKED report should include a concrete blocker in notes.',
+    );
     report.notes = ['iOS physical device was unavailable for this run.'];
     expect(validateReport(report).warnings).toEqual([]);
   });
