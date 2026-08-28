@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Pressable, SafeAreaView, StyleSheet, Text, TextInput, View } from 'react-native';
 import Constants from 'expo-constants';
 
 import { OrientationSafeCaptureView } from '../components/OrientationSafeCaptureView';
@@ -20,6 +20,12 @@ const initialSnapshot: CaptureSnapshot = {
 export function PhoneCaptureScreen() {
   const [snapshot, setSnapshot] = useState(initialSnapshot);
   const [message, setMessage] = useState<string | undefined>();
+  const [pairingCode, setPairingCode] = useState(process.env.EXPO_PUBLIC_PAIRING_CODE ?? '');
+  const pairingCodeRef = useRef(pairingCode);
+  const pairingRequired = !process.env.EXPO_PUBLIC_SESSION_ID;
+  useEffect(() => {
+    pairingCodeRef.current = pairingCode;
+  }, [pairingCode]);
   const session = useMemo(() => {
     const extra = Constants.expoConfig?.extra as Record<string, unknown> | undefined;
     const serverUrl = stringValue(extra?.livekitServerUrl) ?? process.env.EXPO_PUBLIC_LIVEKIT_URL;
@@ -28,7 +34,6 @@ export function PhoneCaptureScreen() {
     if (!serverUrl || !tokenEndpoint) return undefined;
 
     let paired: { sessionId: string; workflowId: string; deviceId: string } | undefined;
-    const pairingCode = process.env.EXPO_PUBLIC_PAIRING_CODE ?? '';
     const pairingEndpoint = process.env.EXPO_PUBLIC_CAPTURE_PAIRING_ENDPOINT ?? '';
     const deviceId = process.env.EXPO_PUBLIC_DEVICE_ID ?? 'vision-codef-phone';
     let captureSession: PhoneCaptureSession;
@@ -36,11 +41,24 @@ export function PhoneCaptureScreen() {
       serverUrl,
       sessionId: process.env.EXPO_PUBLIC_SESSION_ID ?? '',
       getToken: async () => {
-        if (!paired && pairingCode) {
-          if (!pairingEndpoint) throw new Error('EXPO_PUBLIC_CAPTURE_PAIRING_ENDPOINT is required with EXPO_PUBLIC_PAIRING_CODE.');
-          paired = await requestPairing(pairingEndpoint, { companyId: process.env.EXPO_PUBLIC_COMPANY_ID ?? '', memberId: process.env.EXPO_PUBLIC_MEMBER_ID ?? '', pairingCode, deviceId });
+        const currentPairingCode = pairingCodeRef.current.trim();
+        if (!paired && currentPairingCode) {
+          if (!pairingEndpoint)
+            throw new Error(
+              'EXPO_PUBLIC_CAPTURE_PAIRING_ENDPOINT is required when pairing a capture session.',
+            );
+          paired = await requestPairing(pairingEndpoint, {
+            companyId: process.env.EXPO_PUBLIC_COMPANY_ID ?? '',
+            memberId: process.env.EXPO_PUBLIC_MEMBER_ID ?? '',
+            pairingCode: currentPairingCode,
+            deviceId,
+          });
           captureSession.setSessionIdentity(paired.sessionId);
         }
+        if (!paired && pairingRequired)
+          throw new Error(
+            'Enter the six-digit pairing code shown on the desktop before starting capture.',
+          );
         return requestLiveKitToken(tokenEndpoint, {
           companyId: process.env.EXPO_PUBLIC_COMPANY_ID ?? '',
           memberId: process.env.EXPO_PUBLIC_MEMBER_ID ?? '',
@@ -98,9 +116,34 @@ export function PhoneCaptureScreen() {
           <Text style={styles.previewLabel}>
             {snapshot.state === 'active' ? 'CAPTURING' : 'READY'}
           </Text>
-          <Text style={styles.previewTitle}>{snapshot.facingMode === 'rear' ? 'Rear' : 'Front'} camera - {snapshot.orientation} - {snapshot.connection}</Text>
+          <Text style={styles.previewTitle}>
+            {snapshot.facingMode === 'rear' ? 'Rear' : 'Front'} camera - {snapshot.orientation} -{' '}
+            {snapshot.connection}
+          </Text>
           <Text style={styles.previewHint}>
             Keep this app foregrounded and the screen awake while the session is active.
+          </Text>
+        </View>
+
+        <View style={styles.pairingField}>
+          <Text style={styles.pairingLabel}>Phone pairing code</Text>
+          <TextInput
+            value={pairingCode}
+            onChangeText={(value) => setPairingCode(value.replace(/\D/g, '').slice(0, 6))}
+            editable={
+              snapshot.state !== 'active' &&
+              snapshot.state !== 'paused' &&
+              snapshot.state !== 'preparing'
+            }
+            keyboardType="number-pad"
+            maxLength={6}
+            placeholder="000000"
+            placeholderTextColor="#6f8198"
+            style={styles.pairingInput}
+            accessibilityLabel="Phone pairing code"
+          />
+          <Text style={styles.pairingHint}>
+            Enter the six-digit code shown on the desktop before starting.
           </Text>
         </View>
 
@@ -130,7 +173,11 @@ export function PhoneCaptureScreen() {
             <Pressable
               style={styles.startButton}
               onPress={() => void start()}
-              disabled={!session || snapshot.state === 'preparing'}
+              disabled={
+                !session ||
+                snapshot.state === 'preparing' ||
+                (pairingRequired && pairingCode.trim().length !== 6)
+              }
             >
               <Text style={styles.startButtonText}>
                 {snapshot.state === 'failed' ? 'Retry' : 'Start capture'}
@@ -158,11 +205,21 @@ function stringValue(value: unknown): string | undefined {
 
 async function requestLiveKitToken(
   endpoint: string,
-  input: { companyId: string; memberId: string; workflowId: string; sessionId: string; deviceId: string },
+  input: {
+    companyId: string;
+    memberId: string;
+    workflowId: string;
+    sessionId: string;
+    deviceId: string;
+  },
 ): Promise<string> {
   const response = await fetch(endpoint, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-company-id': input.companyId, 'x-member-id': input.memberId },
+    headers: {
+      'content-type': 'application/json',
+      'x-company-id': input.companyId,
+      'x-member-id': input.memberId,
+    },
     body: JSON.stringify(input),
   });
   if (!response.ok) throw new Error(`Capture token request failed (${response.status}).`);
@@ -172,8 +229,19 @@ async function requestLiveKitToken(
   return data.token;
 }
 
-async function requestPairing(endpoint: string, input: { companyId: string; memberId: string; pairingCode: string; deviceId: string }): Promise<{ sessionId: string; workflowId: string; deviceId: string }> {
-  const response = await fetch(endpoint, { method: 'POST', headers: { 'content-type': 'application/json', 'x-company-id': input.companyId, 'x-member-id': input.memberId }, body: JSON.stringify({ pairingCode: input.pairingCode, deviceId: input.deviceId }) });
+async function requestPairing(
+  endpoint: string,
+  input: { companyId: string; memberId: string; pairingCode: string; deviceId: string },
+): Promise<{ sessionId: string; workflowId: string; deviceId: string }> {
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-company-id': input.companyId,
+      'x-member-id': input.memberId,
+    },
+    body: JSON.stringify({ pairingCode: input.pairingCode, deviceId: input.deviceId }),
+  });
   const payload: unknown = await response.json();
   if (!response.ok) throw new Error(`Capture pairing failed (${response.status}).`);
   const data = unwrapData(payload);
@@ -182,7 +250,8 @@ async function requestPairing(endpoint: string, input: { companyId: string; memb
 }
 
 function unwrapData(value: unknown): unknown {
-  if (typeof value === 'object' && value !== null && 'data' in value) return (value as { data: unknown }).data;
+  if (typeof value === 'object' && value !== null && 'data' in value)
+    return (value as { data: unknown }).data;
   return value;
 }
 
@@ -196,8 +265,16 @@ function isTokenResponse(value: unknown): value is { token: string } {
   );
 }
 
-function isPairingResponse(value: unknown): value is { sessionId: string; workflowId: string; deviceId: string } {
-  return typeof value === 'object' && value !== null && typeof (value as Record<string, unknown>).sessionId === 'string' && typeof (value as Record<string, unknown>).workflowId === 'string' && typeof (value as Record<string, unknown>).deviceId === 'string';
+function isPairingResponse(
+  value: unknown,
+): value is { sessionId: string; workflowId: string; deviceId: string } {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as Record<string, unknown>).sessionId === 'string' &&
+    typeof (value as Record<string, unknown>).workflowId === 'string' &&
+    typeof (value as Record<string, unknown>).deviceId === 'string'
+  );
 }
 
 const styles = StyleSheet.create({
@@ -226,6 +303,20 @@ const styles = StyleSheet.create({
   metaLabel: { color: '#7e8da3', fontSize: 11, textTransform: 'uppercase' },
   metaValue: { color: '#e4ebf5', fontSize: 13, marginTop: 5 },
   message: { color: '#ffcf86', fontSize: 13, lineHeight: 19, marginBottom: 12 },
+  pairingField: { marginBottom: 14 },
+  pairingLabel: { color: '#a7b5c8', fontSize: 12, fontWeight: '700', marginBottom: 6 },
+  pairingInput: {
+    minHeight: 50,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#3d526d',
+    backgroundColor: '#101c2e',
+    color: '#f6f8fb',
+    fontSize: 20,
+    letterSpacing: 5,
+    paddingHorizontal: 14,
+  },
+  pairingHint: { color: '#7e8da3', fontSize: 12, marginTop: 6 },
   controls: { flexDirection: 'row', gap: 12 },
   secondaryButton: {
     flex: 1,
