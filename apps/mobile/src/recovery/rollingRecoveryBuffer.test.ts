@@ -71,4 +71,16 @@ describe('rolling recovery buffer', () => {
     expect(uploads).toEqual([{ segment: persisted, bytes: new Uint8Array([7, 7]) }]);
     expect(buffer.list()).toEqual([persisted]);
   });
+  it('rejects a segment when checksum verification is enabled and the hash mismatches', async () => {
+    const buffer = new RollingRecoveryBuffer({
+      verifyChecksums: true,
+      checksum: async () => 'f'.repeat(64),
+    });
+    const invalid = { ...segment(8, 8_000, 9_000), sha256: 'a'.repeat(64) };
+
+    await expect(buffer.append(invalid, new Uint8Array([8, 8]))).rejects.toThrow(
+      'failed SHA-256 verification',
+    );
+    expect(buffer.list()).toEqual([]);
+  });
 });

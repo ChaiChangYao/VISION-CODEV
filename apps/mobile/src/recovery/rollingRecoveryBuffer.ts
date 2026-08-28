@@ -5,6 +5,8 @@ export type RecoveryBufferEntry = {
   bytes: Uint8Array;
 };
 
+export type RecoveryChecksum = (bytes: Uint8Array) => Promise<string>;
+
 export type RecoveryBufferStore = {
   put(segment: RecoverySegment, bytes: Uint8Array): Promise<void>;
   remove(segment: RecoverySegment): Promise<void>;
@@ -20,11 +22,14 @@ export type RecoveryBufferOptions = {
   maxDurationMs: number;
   maxBytes: number;
   store?: RecoveryBufferStore;
+  verifyChecksums?: boolean;
+  checksum?: RecoveryChecksum;
 };
 
 const defaultOptions: RecoveryBufferOptions = {
   maxDurationMs: 30_000,
   maxBytes: 12 * 1024 * 1024,
+  verifyChecksums: false,
 };
 
 /**
@@ -48,6 +53,9 @@ export class RollingRecoveryBuffer {
     await this.ready;
     if (segment.byteLength !== bytes.byteLength) {
       throw new Error('Recovery segment byteLength does not match payload length');
+    }
+    if (!(await this.checksumMatches(segment, bytes))) {
+      throw new Error(`Recovery segment ${segment.id} failed SHA-256 verification`);
     }
 
     const previous = this.segments.find((item) => item.id === segment.id);
@@ -109,7 +117,8 @@ export class RollingRecoveryBuffer {
       for (const entry of entries) {
         if (
           entry.segment.byteLength !== entry.bytes.byteLength ||
-          this.bytesById.has(entry.segment.id)
+          this.bytesById.has(entry.segment.id) ||
+          !(await this.checksumMatches(entry.segment, entry.bytes))
         )
           continue;
         this.segments.push(entry.segment);
@@ -120,6 +129,14 @@ export class RollingRecoveryBuffer {
     } catch {
       // Recovery is best effort; a corrupt cache must never prevent capture startup.
     }
+  }
+
+  private async checksumMatches(segment: RecoverySegment, bytes: Uint8Array): Promise<boolean> {
+    if (!this.options.verifyChecksums) return true;
+    const expected = segment.sha256.toLowerCase();
+    if (!/^[a-f0-9]{64}$/.test(expected)) return false;
+    const checksum = this.options.checksum ?? sha256Hex;
+    return (await checksum(bytes)).toLowerCase() === expected;
   }
 
   private async trim(nowMs?: number): Promise<void> {
@@ -142,4 +159,19 @@ export class RollingRecoveryBuffer {
       this.bytesById.delete(oldest.id);
     }
   }
+}
+
+async function sha256Hex(bytes: Uint8Array): Promise<string> {
+  const subtle = globalThis.crypto?.subtle;
+  if (!subtle) {
+    throw new Error(
+      'Web Crypto SHA-256 is unavailable; recovery checksum verification cannot run.',
+    );
+  }
+  const copy = new Uint8Array(bytes.byteLength);
+  copy.set(bytes);
+  const digest = await subtle.digest('SHA-256', copy);
+  return Array.from(new Uint8Array(digest), (value) => value.toString(16).padStart(2, '0')).join(
+    '',
+  );
 }

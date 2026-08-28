@@ -41,7 +41,10 @@ export class PhoneCaptureSession {
 
   constructor(
     options: ConstructorParameters<typeof LiveKitPhoneClient>[0],
-    recoveryBuffer = new RollingRecoveryBuffer({ store: new FileSystemRecoveryStore() }),
+    recoveryBuffer = new RollingRecoveryBuffer({
+      store: new FileSystemRecoveryStore(),
+      verifyChecksums: true,
+    }),
   ) {
     this.sessionId = options.sessionId ?? '';
     this.audio = new LiveKitAudioRouteManager();
