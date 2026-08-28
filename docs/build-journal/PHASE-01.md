@@ -21,4 +21,3 @@ Foundation files are being established. Full checks run after contract and packa
 ## Next
 
 Freeze shared contracts and launch four disjoint implementation workstreams.
-
