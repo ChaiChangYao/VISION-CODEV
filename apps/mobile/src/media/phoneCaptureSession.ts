@@ -1,6 +1,7 @@
 import { Camera } from 'expo-camera';
 import { AppState, type AppStateStatus } from 'react-native';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
+import * as ScreenOrientation from 'expo-screen-orientation';
 
 import {
   INITIAL_CAPTURE_MACHINE_STATE,
@@ -9,7 +10,7 @@ import {
   type CaptureMachineState,
 } from '../capture/captureSessionMachine';
 import { LiveKitAudioRouteManager, type AudioRouteManager } from '../audio/audioRouteManager';
-import type { CaptureSnapshot, FacingMode, RecoveryRequest, RecoverySegment } from '../types';
+import type { CaptureSnapshot, DeviceOrientation, FacingMode, RecoveryRequest, RecoverySegment } from '../types';
 import { LiveKitPhoneClient } from './livekitPhoneClient';
 import { RollingRecoveryBuffer } from '../recovery/rollingRecoveryBuffer';
 
@@ -28,6 +29,8 @@ export class PhoneCaptureSession {
   private egressHealthy = true;
   private recoveryPending = 0;
   private facingMode: FacingMode = 'rear';
+  private orientation: DeviceOrientation = 'portrait';
+  private orientationSubscription: ScreenOrientation.Subscription | undefined;
 
   constructor(
     options: ConstructorParameters<typeof LiveKitPhoneClient>[0],
@@ -73,7 +76,7 @@ export class PhoneCaptureSession {
       connection: this.machine.connection,
       sessionId: this.sessionId,
       facingMode: this.facingMode,
-      orientation: 'portrait',
+      orientation: this.orientation,
       audioRoute: this.audio.current(),
       egressHealthy: this.egressHealthy,
       recoveryPending: this.recoveryPending,
@@ -87,6 +90,7 @@ export class PhoneCaptureSession {
   }
 
   async start(): Promise<void> {
+    await this.startOrientationObservation();
     this.publishedAudio = false;
     this.publishedVideo = false;
     this.apply({ type: 'PREPARE' });
@@ -163,11 +167,23 @@ export class PhoneCaptureSession {
   }
 
   dispose(): void {
+    this.orientationSubscription && ScreenOrientation.removeOrientationChangeListener(this.orientationSubscription);
+    this.orientationSubscription = undefined;
     this.appStateSubscription?.remove();
     this.appStateSubscription = undefined;
     deactivateKeepAwake(WAKE_TAG);
     void this.client.disconnect();
     void this.audio.stop();
+  }
+
+  private async startOrientationObservation(): Promise<void> {
+    if (this.orientationSubscription) return;
+    this.orientation = toDeviceOrientation(await ScreenOrientation.getOrientationAsync());
+    this.orientationSubscription = ScreenOrientation.addOrientationChangeListener(({ orientationInfo }) => {
+      this.orientation = toDeviceOrientation(orientationInfo.orientation);
+      this.emit();
+    });
+    this.emit();
   }
 
   private readonly onAppStateChange = (nextState: AppStateStatus): void => {
@@ -199,4 +215,11 @@ export class PhoneCaptureSession {
     const snapshot = this.snapshot();
     for (const listener of this.listeners) listener(snapshot);
   }
+}
+
+function toDeviceOrientation(orientation: ScreenOrientation.Orientation): DeviceOrientation {
+  return orientation === ScreenOrientation.Orientation.LANDSCAPE_LEFT ||
+    orientation === ScreenOrientation.Orientation.LANDSCAPE_RIGHT
+    ? 'landscape'
+    : 'portrait';
 }

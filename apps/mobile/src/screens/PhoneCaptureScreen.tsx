@@ -98,7 +98,7 @@ export function PhoneCaptureScreen() {
           <Text style={styles.previewLabel}>
             {snapshot.state === 'active' ? 'CAPTURING' : 'READY'}
           </Text>
-          <Text style={styles.previewTitle}>Rear camera · {snapshot.connection}</Text>
+          <Text style={styles.previewTitle}>{snapshot.facingMode === 'rear' ? 'Rear' : 'Front'} camera - {snapshot.orientation} - {snapshot.connection}</Text>
           <Text style={styles.previewHint}>
             Keep this app foregrounded and the screen awake while the session is active.
           </Text>
