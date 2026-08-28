@@ -1,4 +1,4 @@
-import { AudioSession } from '@livekit/react-native';
+import { AudioSession, AndroidAudioTypePresets } from '@livekit/react-native';
 
 import type { CaptureSnapshot } from '../types';
 
@@ -20,6 +20,13 @@ export class LiveKitAudioRouteManager implements AudioRouteManager {
   private route: AudioRoute = 'unknown';
 
   async start(): Promise<void> {
+    await AudioSession.configureAudio({
+      android: {
+        preferredOutputList: ['bluetooth', 'headset', 'speaker', 'earpiece'],
+        audioTypeOptions: AndroidAudioTypePresets.communication,
+      },
+      ios: { defaultOutput: 'speaker' },
+    });
     await AudioSession.startAudioSession();
   }
 
