@@ -38,6 +38,7 @@ export class PhoneCaptureSession {
   ) {
     this.sessionId = options.sessionId ?? '';
     this.audio = new LiveKitAudioRouteManager();
+    this.audio.subscribe(() => this.emit());
     this.recoveryBuffer = recoveryBuffer;
     this.client = new LiveKitPhoneClient({
       ...options,
