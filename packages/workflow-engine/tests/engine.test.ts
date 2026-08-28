@@ -7,6 +7,7 @@ import {
   publishProcedureGraph,
   reduceCaptureState,
   reduceDeploymentState,
+  reduceVoiceState,
   validateProcedureGraph,
 } from '../src/index.js';
 
@@ -88,6 +89,13 @@ describe('deterministic procedure engine', () => {
     ).toBe(false);
   });
 
+  it('keeps realtime voice transitions deterministic and bounded', () => {
+    expect(reduceVoiceState('closed', { type: 'OPEN' })).toEqual({ state: 'listening', accepted: true });
+    expect(reduceVoiceState('listening', { type: 'GUIDANCE_START', stepId: ids.step }).state).toBe('speaking');
+    expect(reduceVoiceState('speaking', { type: 'INTERRUPT', reason: 'wrong fold' }).state).toBe('interrupted');
+    expect(reduceVoiceState('interrupted', { type: 'ACKNOWLEDGE' }).state).toBe('listening');
+    expect(reduceVoiceState('closed', { type: 'GUIDANCE_END' }).accepted).toBe(false);
+  });
   it('publishes only with explicit publication provenance', () => {
     const published = publishProcedureGraph({
       ...graph,

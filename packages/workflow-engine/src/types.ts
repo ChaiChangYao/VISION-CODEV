@@ -3,6 +3,8 @@ import type {
   MediaAssetState,
   ProcedureGraph,
   ProvenanceClass,
+  VoiceEvent as ContractVoiceEvent,
+  VoiceState as ContractVoiceState,
 } from '@vision-codef/contracts';
 
 export type EngineIssueSeverity = 'error' | 'warning';
@@ -56,6 +58,10 @@ export interface ReducerResult<T> {
   accepted: boolean;
   error?: string;
 }
+
+export type VoiceState = ContractVoiceState;
+
+export type VoiceEvent = ContractVoiceEvent;
 
 export type DeploymentState =
   | 'draft'

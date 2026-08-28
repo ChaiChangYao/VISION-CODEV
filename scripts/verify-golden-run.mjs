@@ -22,6 +22,11 @@ await request(`/v1/workflows/${workflow.id}/procedure-graph/publish`, {
   body: JSON.stringify({ graph, reviewerNote: 'Reviewed by the Golden Run acceptance smoke test.' }),
 });
 const deployment = await request(`/v1/workflows/${workflow.id}/deployments`, { method: 'POST' });
+const opened = await request(`/v1/deployments/${deployment.id}/voice`, { method: 'POST', body: JSON.stringify({ type: 'OPEN' }) });
+const speaking = await request(`/v1/deployments/${deployment.id}/voice`, { method: 'POST', body: JSON.stringify({ type: 'GUIDANCE_START', stepId: deployment.currentInstruction ? 'current' : undefined }) });
+const interruptedVoice = await request(`/v1/deployments/${deployment.id}/voice`, { method: 'POST', body: JSON.stringify({ type: 'INTERRUPT', reason: 'paper-crane observation requires attention' }) });
+const acknowledged = await request(`/v1/deployments/${deployment.id}/voice`, { method: 'POST', body: JSON.stringify({ type: 'ACKNOWLEDGE' }) });
+if (opened.voiceState !== 'listening' || speaking.voiceState !== 'speaking' || interruptedVoice.voiceState !== 'interrupted' || acknowledged.voiceState !== 'listening') throw new Error('voice state transition gate did not complete as expected');
 const corners = [{ x: 0, y: 0 }, { x: 100, y: 2 }, { x: 98, y: 100 }, { x: 2, y: 98 }];
 const observation = (timestampMs) => ({ timestampMs, corners, foldState: 'diagonal-left', visibilityScore: 0.95, alignmentScore: 0.95, handOccluded: false });
 const first = await request(`/v1/deployments/${deployment.id}/observations`, { method: 'POST', body: JSON.stringify(observation(0)) });

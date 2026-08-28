@@ -73,6 +73,22 @@ export const CaptureStateSchema = z.enum([
 ]);
 export type CaptureState = z.infer<typeof CaptureStateSchema>;
 
+export const VoiceStateSchema = z.enum(['closed', 'listening', 'speaking', 'interrupted', 'muted', 'error']);
+export type VoiceState = z.infer<typeof VoiceStateSchema>;
+
+export const VoiceEventSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('OPEN') }),
+  z.object({ type: z.literal('CLOSE') }),
+  z.object({ type: z.literal('GUIDANCE_START'), stepId: z.string().optional() }),
+  z.object({ type: z.literal('GUIDANCE_END') }),
+  z.object({ type: z.literal('INTERRUPT'), reason: z.string().min(1) }),
+  z.object({ type: z.literal('ACKNOWLEDGE') }),
+  z.object({ type: z.literal('MUTE') }),
+  z.object({ type: z.literal('UNMUTE') }),
+  z.object({ type: z.literal('FAIL'), reason: z.string().min(1) }),
+]);
+export type VoiceEvent = z.infer<typeof VoiceEventSchema>;
+
 export const MediaAssetStateSchema = z.enum([
   'pending',
   'uploading',

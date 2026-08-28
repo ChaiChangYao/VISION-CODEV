@@ -7,3 +7,4 @@ export * from './induction.js';
 export * from './metrics.js';
 export * from './reducers.js';
 export * from './types.js';
+export * from './voice.js';

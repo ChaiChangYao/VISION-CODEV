@@ -1,8 +1,8 @@
-# Phase 02 — Shared contracts and test harness
+# Phase 02 ï¿½ Shared contracts and test harness
 
 ## Status
 
-In progress
+Complete
 
 ## Decisions
 

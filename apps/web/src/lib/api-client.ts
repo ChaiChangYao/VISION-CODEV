@@ -102,6 +102,7 @@ export type DeploymentView = {
   currentStep: number;
   totalSteps: number;
   currentInstruction?: string;
+  voiceState?: 'closed' | 'listening' | 'speaking' | 'interrupted' | 'muted' | 'error';
   intervention?: {
     title: string;
     detail: string;
@@ -111,6 +112,11 @@ export type DeploymentView = {
   };
   why?: { text: string; evidenceIds: string[]; procedureVersion: number };
 };
+
+export type VoiceEventInput =
+  | { type: 'OPEN' | 'CLOSE' | 'GUIDANCE_END' | 'ACKNOWLEDGE' | 'MUTE' | 'UNMUTE' }
+  | { type: 'GUIDANCE_START'; stepId?: string }
+  | { type: 'INTERRUPT' | 'FAIL'; reason: string };
 
 export type PaperCraneObservation = {
   timestampMs: number;
@@ -138,6 +144,7 @@ export type WorkflowApi = {
   getDeployment(deploymentId: string): Promise<DeploymentView>;
   requestRecovery(deploymentId: string, recoveryStepId: string): Promise<DeploymentView>;
   observeDeployment(deploymentId: string, observation: PaperCraneObservation): Promise<DeploymentView & { decision: string; decisionReason: string }>;
+  transitionVoice(deploymentId: string, event: VoiceEventInput): Promise<DeploymentView>;
 };
 
 type ApiEnvelope<T> = { data: T; traceId: string; schemaVersion: string };
@@ -218,6 +225,7 @@ function normalizeDeployment(value: unknown): DeploymentView {
     currentStep: Number(input.currentStep ?? input.current_step ?? 0),
     totalSteps: Number(input.totalSteps ?? input.total_steps ?? 0),
     currentInstruction: input.currentInstruction ? String(input.currentInstruction) : undefined,
+    voiceState: input.voiceState ? String(input.voiceState) as DeploymentView['voiceState'] : undefined,
     intervention: intervention.title
       ? {
           title: String(intervention.title),
@@ -347,6 +355,9 @@ export function createApiClient(config: ApiClientConfig = {}): WorkflowApi {
         method: 'POST',
         body: JSON.stringify({ recoveryStepId }),
       }));
+    },
+    async transitionVoice(deploymentId, event) {
+      return normalizeDeployment(await request(`/v1/deployments/${deploymentId}/voice`, { method: 'POST', body: JSON.stringify(event) }));
     },
     async observeDeployment(deploymentId, observation) {
       const value = await request<Record<string, unknown>>(`/v1/deployments/${deploymentId}/observations`, {

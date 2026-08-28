@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { CONTRACT_VERSION, WorkflowIntentSchema } from './index';
+import { CONTRACT_VERSION, VoiceEventSchema, WorkflowIntentSchema } from './index';
 
 describe('shared contracts', () => {
+  it('validates bounded realtime voice events', () => {
+    expect(VoiceEventSchema.parse({ type: 'GUIDANCE_START', stepId: 'step-1' }).type).toBe('GUIDANCE_START');
+    expect(() => VoiceEventSchema.parse({ type: 'INTERRUPT' })).toThrow();
+  });
   it('validates versioned workflow intent payloads', () => {
     expect(CONTRACT_VERSION).toBe('0.1');
     expect(WorkflowIntentSchema.parse({
