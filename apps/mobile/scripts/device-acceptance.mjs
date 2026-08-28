@@ -6,6 +6,7 @@ import path from 'node:path';
 
 export const REPORT_VERSION = '0.1';
 export const REPORT_STATUSES = ['NOT_RUN', 'PASS', 'FAIL', 'BLOCKED'];
+export const EVIDENCE_SOURCES = ['physical', 'provider', 'operator'];
 
 const PHASES = {
   4: {
@@ -141,8 +142,8 @@ export function validateReport(report) {
     if (item.status === 'PASS') {
       if (!Array.isArray(item.evidence) || item.evidence.length === 0) errors.push(`PASS check ${String(item.id)} requires evidence.`);
       for (const evidence of item.evidence ?? []) {
-        if (!evidence || evidence.source === 'simulator' || evidence.source === 'fixture') {
-          errors.push(`PASS check ${String(item.id)} cannot use simulator or fixture evidence.`);
+        if (!evidence || !EVIDENCE_SOURCES.includes(evidence.source)) {
+          errors.push(`PASS check ${String(item.id)} requires evidence source physical, provider, or operator.`);
         }
         if (!evidence?.reference || !evidence?.kind) errors.push(`Evidence for PASS check ${String(item.id)} requires kind and reference.`);
         if (containsSecretLikeText(evidence)) errors.push(`Evidence for ${String(item.id)} appears to contain a token or secret; redact it.`);

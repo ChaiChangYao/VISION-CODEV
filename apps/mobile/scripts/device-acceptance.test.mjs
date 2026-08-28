@@ -24,7 +24,7 @@ describe('physical device acceptance report harness', () => {
     report.checks[0].status = 'PASS';
     report.checks[0].evidence = [{ kind: 'log', source: 'fixture', reference: 'fixture.log' }];
     const validation = validateReport(report);
-    expect(validation.errors.some((error) => error.includes('simulator or fixture'))).toBe(true);
+    expect(validation.errors.some((error) => error.includes('evidence source'))).toBe(true);
   });
 
   it('accepts a fully evidenced report only after explicit operator attestation', () => {
