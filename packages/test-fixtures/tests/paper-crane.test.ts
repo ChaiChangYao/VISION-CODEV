@@ -46,6 +46,31 @@ describe('paper-crane replay fixtures', () => {
     ]);
   });
 
+  it('counts every urgent interrupt when calculating intervention precision', () => {
+    const falseUrgent = {
+      fixtureId: 'paper-crane-false-urgent',
+      scenario: 'correct-transition',
+      expected: 'ADVANCED',
+      actual: 'INTERRUPT',
+      passed: false,
+      unsupportedRecoveryInvented: false,
+    } satisfies PaperCraneFixtureResult;
+    const report = buildPaperCraneMetricReport([...paperCraneFixtures.map(runFixture), falseUrgent], {
+      approvedGoldenRun: false,
+      correctRecordings: 0,
+      requiredCorrectRecordings: 10,
+      deviationRecordingsByType: {},
+      requiredDeviationRecordingsPerType: 5,
+      portraitAndLandscape: false,
+      variedLighting: false,
+      occlusionCases: false,
+      annotations: false,
+      participantDisjoint: false,
+      frozenAcceptanceSet: false,
+    });
+    expect(report.metrics.wrongFoldInterventionPrecision).toBe(2 / 3);
+  });
+
   it('reports fixture metrics without claiming production accuracy', () => {
     const report = buildPaperCraneMetricReport(paperCraneFixtures.map(runFixture), {
       approvedGoldenRun: true,

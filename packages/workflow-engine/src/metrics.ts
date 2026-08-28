@@ -35,6 +35,7 @@ export function buildPaperCraneMetricReport(
       result.scenario === 'correct-transition' || result.scenario === 'delayed-but-correct',
   );
   const wrong = results.filter((result) => result.scenario === 'wrong-fold');
+  const interrupts = results.filter((result) => result.actual === 'INTERRUPT');
   const occluded = results.filter((result) => result.scenario === 'occluded-uncertain');
   const recovery = results.filter((result) => result.scenario === 'approved-recovery');
   const latency = results.flatMap((result) =>
@@ -54,8 +55,8 @@ export function buildPaperCraneMetricReport(
       ),
       selectedWrongFoldRecall: rate(wrong.filter((result) => result.passed).length, wrong.length),
       wrongFoldInterventionPrecision: rate(
-        wrong.filter((result) => result.passed).length,
-        wrong.length,
+        interrupts.filter((result) => result.expected === 'INTERRUPT' && result.passed).length,
+        interrupts.length,
       ),
       falseUrgentInterventionRate: rate(
         correct.filter((result) => result.actual === 'INTERRUPT').length,
