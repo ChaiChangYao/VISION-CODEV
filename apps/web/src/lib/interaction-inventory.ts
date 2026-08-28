@@ -2,7 +2,7 @@ export type InteractionInventoryEntry = {
   id: string;
   route: string;
   label: string;
-  kind: 'link' | 'button' | 'form' | 'tab' | 'input';
+  kind: 'link' | 'button' | 'form' | 'tab' | 'input' | 'region';
   automated: boolean;
   notes?: string;
 };
@@ -64,14 +64,14 @@ export const interactionInventory: InteractionInventoryEntry[] = [
     automated: true,
   },
   {
-    id: 'train-start',
+    id: 'train-start-session',
     route: '/workflows/:id/train',
     label: 'Start capture',
     kind: 'button',
     automated: true,
   },
   {
-    id: 'train-stop',
+    id: 'train-stop-session',
     route: '/workflows/:id/train',
     label: 'Stop and process',
     kind: 'button',
@@ -92,30 +92,59 @@ export const interactionInventory: InteractionInventoryEntry[] = [
     automated: true,
   },
   {
-    id: 'approve-publish',
+    id: 'connected-publish',
     route: '/workflows/:id/approve',
     label: 'Publish procedure',
     kind: 'button',
     automated: true,
   },
   {
-    id: 'deploy-start',
+    id: 'connected-deploy-start',
     route: '/workflows/:id/deploy',
     label: 'Start deployment',
     kind: 'button',
     automated: true,
   },
   {
-    id: 'deploy-recovery',
+    id: 'connected-deploy-recover',
     route: '/workflows/:id/deploy',
     label: 'Return to previous state',
     kind: 'button',
     automated: true,
   },
   {
-    id: 'deploy-why',
+    id: 'connected-deploy-why',
     route: '/workflows/:id/deploy',
     label: 'Why?',
+    kind: 'region',
+    automated: true,
+  },
+  {
+    id: 'train-create-session',
+    route: '/workflows/:id/train',
+    label: 'Prepare capture',
+    kind: 'button',
+    automated: true,
+  },
+  {
+    id: 'connected-wrong-fold-fixture',
+    route: '/workflows/:id/deploy',
+    label: 'Run wrong-fold fixture',
+    kind: 'button',
+    automated: true,
+    notes: 'Controlled development fixture; never physical acceptance evidence.',
+  },
+  {
+    id: 'intent-golden-run',
+    route: '/new-chat',
+    label: 'Golden Run intent',
+    kind: 'button',
+    automated: true,
+  },
+  {
+    id: 'intent-needs-clarification',
+    route: '/new-chat',
+    label: 'Needs clarification intent',
     kind: 'button',
     automated: true,
   },

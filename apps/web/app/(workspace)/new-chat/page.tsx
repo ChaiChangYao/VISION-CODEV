@@ -96,7 +96,8 @@ export default function NewChatPage() {
                 variant="primary"
                 disabled={!brief.trim() || isSubmitting}
               >
-                <Icon name="send" size={14} /> {isSubmitting ? 'Checking brief…' : 'Create Golden Run'}
+                <Icon name="send" size={14} />{' '}
+                {isSubmitting ? 'Checking brief…' : 'Create Golden Run'}
               </Button>
             </div>
             {submitted && clarification && (
@@ -126,6 +127,7 @@ export default function NewChatPage() {
         <Card className="routing-card">
           <h3>Detected intent</h3>
           <button
+            id="intent-golden-run"
             className={`routing-option ${family === 'golden_run' ? 'routing-option-selected' : ''}`}
             onClick={() => {
               setFamily('golden_run');
@@ -142,6 +144,7 @@ export default function NewChatPage() {
             </span>
           </button>
           <button
+            id="intent-needs-clarification"
             className={`routing-option ${family === 'ambiguous' ? 'routing-option-selected' : ''}`}
             onClick={() => {
               setFamily('ambiguous');
