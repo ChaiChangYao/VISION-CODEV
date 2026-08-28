@@ -7,7 +7,7 @@ Expo Go is not an acceptance environment. Build a development client or standalo
 Run on one real Android phone **or** iPhone with one Bluetooth headset and the current stable Chrome desktop browser:
 
 1. Configure `EXPO_PUBLIC_LIVEKIT_URL`, `EXPO_PUBLIC_CAPTURE_TOKEN_ENDPOINT` (for local API: `/v1/capture-token`), `EXPO_PUBLIC_CAPTURE_PAIRING_ENDPOINT` (for local API: `/v1/capture-pairings/claim`), `EXPO_PUBLIC_COMPANY_ID`, `EXPO_PUBLIC_MEMBER_ID`, and a stable `EXPO_PUBLIC_DEVICE_ID` in a local, uncommitted environment. The desktop Train surface displays the six-digit code after preparing a capture; enter that code in the native app, which claims it before requesting a publisher token. `EXPO_PUBLIC_PAIRING_CODE` remains an optional prefilled value for controlled fixtures, not the normal operator flow. Legacy explicit `EXPO_PUBLIC_WORKFLOW_ID`/`EXPO_PUBLIC_SESSION_ID` configuration remains available only for controlled fixture/debug use.
-2. Build with `pnpm --filter @vision-codef/mobile prebuild` followed by the platform development build.
+2. For a physical phone, replace any `localhost` host in the mobile LiveKit/API URLs with a LAN-reachable development-machine address or approved tunnel; `localhost` on the phone does not refer to the desktop. Build with `pnpm --filter @vision-codef/mobile prebuild` followed by the platform development build.
 3. Grant camera and microphone permissions.
 4. Start a session with the rear camera in the mounted orientation.
 5. Verify the phone publishes camera and microphone tracks to the LiveKit room and the desktop can monitor them.
