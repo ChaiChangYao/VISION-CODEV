@@ -10,6 +10,7 @@ Complete for the local demonstrator.
 - Added reviewer approval requirements and immutable published versions.
 - Added provenance-backed deployment instructions and `Why?` responses.
 - Added rejection of unsupported model-only publication provenance.
+- Added fail-closed API behavior: unprocessed workflows cannot expose or publish a procedure graph; demo data remains opt-in in the web Approve surface.
 
 ## Verification
 

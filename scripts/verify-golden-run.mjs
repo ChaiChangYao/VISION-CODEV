@@ -23,7 +23,37 @@ const prematureStart = await fetch(`${baseUrl}/v1/capture-sessions/${capture.id}
 });
 const prematureBody = await prematureStart.json();
 if (prematureStart.status !== 409 || prematureBody?.data?.error?.code !== 'CONFLICT') throw new Error('capture start must require a claimed native phone session');
-const graph = await request(`/v1/workflows/${workflow.id}/procedure-graph`);
+const unprocessedGraph = await fetch(baseUrl + '/v1/workflows/' + workflow.id + '/procedure-graph', {
+  headers: { ...tenantHeaders },
+});
+const unprocessedBody = await unprocessedGraph.json();
+if (unprocessedGraph.status !== 412 || unprocessedBody?.data?.error?.code !== 'PRECONDITION_FAILED') throw new Error('unprocessed procedure graph must remain unavailable');
+
+const graph = {
+  id: '11111111-1111-4111-8111-111111111111',
+  version: 1,
+  states: [
+    { id: '22222222-2222-4222-8222-222222222222', label: 'Ready', predicates: ['paper visible'] },
+    { id: '33333333-3333-4333-8333-333333333333', label: 'Folded', predicates: ['diagonal fold complete'] },
+  ],
+  steps: [{
+    id: '44444444-4444-4444-8444-444444444444',
+    ordinalHint: 0,
+    title: 'Make the first diagonal fold',
+    instruction: 'Fold the lower corner to the upper corner.',
+    observedAction: 'fold',
+    evidenceRefs: [],
+    provenance: ['EXPERT_ASSERTION', 'PUBLISHED_REQUIREMENT'],
+    startState: ['22222222-2222-4222-8222-222222222222'],
+    expectedAction: ['fold', '*'],
+    endState: ['33333333-3333-4333-8333-333333333333'],
+    allowableVariations: [],
+    deviationRules: ['wrong fold requires interruption'],
+    recoveryTransitions: [],
+    confidence: 1,
+  }],
+  published: false,
+};
 await request(`/v1/workflows/${workflow.id}/procedure-graph/publish`, {
   method: 'POST',
   body: JSON.stringify({ graph, reviewerNote: 'Reviewed by the Golden Run acceptance smoke test.' }),
