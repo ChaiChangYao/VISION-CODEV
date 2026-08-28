@@ -53,4 +53,22 @@ describe('rolling recovery buffer', () => {
     await buffer.acknowledgeReconciled(['segment-1']);
     expect(buffer.list()).toHaveLength(0);
   });
+  it('rehydrates persisted segments before serving an explicit gap request', async () => {
+    const persisted = segment(7, 7_000, 8_000);
+    const store = {
+      put: async () => undefined,
+      remove: async () => undefined,
+      load: async () => [{ segment: persisted, bytes: new Uint8Array([7, 7]) }],
+    };
+    const buffer = new RollingRecoveryBuffer({ store });
+    const uploads = await buffer.drainForRequest({
+      sessionId: 'session-1',
+      missingFromMs: 7_500,
+      missingToMs: 8_500,
+      requestedAt: '2026-01-01T00:00:00.000Z',
+      reason: 'egress_gap',
+    });
+    expect(uploads).toEqual([{ segment: persisted, bytes: new Uint8Array([7, 7]) }]);
+    expect(buffer.list()).toEqual([persisted]);
+  });
 });
