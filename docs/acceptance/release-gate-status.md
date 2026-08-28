@@ -9,6 +9,8 @@ external provider, or representative evaluation data.
 | Repository, ADR, ownership, and v0.1 contracts | PASS | `docs/adr/0001-system-foundation.md`, shared contracts, and isolated Wave 1 integration history |
 | Company isolation and signed request boundary | IMPLEMENTED / RUNTIME PENDING | PostgreSQL RLS migrations, tenant repositories, membership checks, and auth tests; live Postgres isolation test requires the compose stack |
 | Compiled API runtime | PASS | `node apps/api/dist/server.js` answered `/health` after `pnpm build` |
+| Expo native prebuild configuration | PASS | `pnpm --filter @vision-codef/mobile prebuild -- --no-install` generated the Android project and resolved camera, microphone, wake-lock, orientation, LiveKit, and WebRTC plugins; no physical build is claimed |
+| First-slice Compose wiring | IMPLEMENTED / RUNTIME PENDING | `docker compose -f infra/docker-compose.yml config --quiet` passes; LiveKit Server, Redis, separate Egress, MinIO initialization, and Temporal are wired, but Docker Engine is unavailable in this environment |
 | Local Golden Run API journey | PASS | `scripts/verify-golden-run.mjs` covers workflow, reviewed publication, voice transitions, wrong-fold persistence, intervention, and approved recovery |
 | Physical phone pairing and LiveKit camera/audio | BLOCKED | Requires one real Android or iPhone, Bluetooth headset, reachable LiveKit, and current Chrome; no simulated success is accepted |
 | Canonical Egress media persistence | BLOCKED | Requires configured LiveKit Egress and S3-compatible storage, plus a real capture object/checksum |
