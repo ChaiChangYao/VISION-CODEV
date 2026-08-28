@@ -35,7 +35,7 @@ export async function withTenantContext<T>(
       [tenant.companyId, tenant.memberId],
     );
     const membership = await client.query(
-      'SELECT 1 FROM members WHERE company_id =  AND id =  LIMIT 1',
+      'SELECT 1 FROM members WHERE company_id = $1 AND id = $2 LIMIT 1',
       [tenant.companyId, tenant.memberId],
     );
     if (membership.rows.length === 0) throw new Error('Tenant member is not a member of the requested company.');

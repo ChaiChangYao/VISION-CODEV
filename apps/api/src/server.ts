@@ -1,8 +1,9 @@
 import 'dotenv/config';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { EgressStatus, WebhookReceiver } from 'livekit-server-sdk';
-import { randomInt, randomUUID } from 'node:crypto';
+import { randomInt } from 'node:crypto';
 import { URL } from 'node:url';
+import { generateUuidV7 } from '@vision-codef/database';
 import { ProcessingCompletionSchema, ProcedureGraphSchema, VoiceEventSchema, WorkflowIntentSchema, type EventEnvelope, type ProcessingCompletion, type ProcedureGraph, type WorkflowIntent } from '@vision-codef/contracts';
 import { DevelopmentStore, type CaptureSession, type DeploymentRun, type MediaAsset, type Workflow } from './store.js';
 import { evaluatePaperCraneObservation, PAPER_CRANE_POLICY } from './paper-crane.js';
@@ -21,7 +22,7 @@ const runtimePersistence = createConfiguredRuntimePersistence();
 if (process.env.NODE_ENV === 'production' && !runtimePersistence) throw new Error('PostgreSQL runtime persistence must be configured in production.');
 const store = new DevelopmentStore(runtimePersistence);
 const now = () => new Date().toISOString();
-const id = () => randomUUID();
+const id = () => generateUuidV7();
 const liveKitConfigured = Boolean(process.env.LIVEKIT_API_KEY && process.env.LIVEKIT_API_SECRET && process.env.LIVEKIT_URL);
 const membershipDirectory = createMembershipDirectory();
 function deploymentView(run: DeploymentRun) { const workflow = getWorkflow(run.workflowId, run.companyId); return { ...run, status: run.status === 'active' ? 'monitoring' : run.status, totalSteps: workflow.graph?.steps.length ?? 0, currentInstruction: workflow.graph?.steps[run.currentStep]?.instruction, intervention: run.intervention }; }

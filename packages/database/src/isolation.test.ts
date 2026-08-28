@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import type { Pool } from 'pg';
@@ -38,6 +38,22 @@ describe('tenant isolation migration contract', () => {
     }
   });
 
+  it('checks membership with parameterized company and member IDs', async () => {
+    const calls: Array<{ text: string; values?: readonly unknown[] }> = [];
+    const query = vi.fn(async (text: string, values?: readonly unknown[]) => {
+      calls.push({ text, values });
+      return text.startsWith('SELECT 1 FROM members') ? { rows: [{}] } : { rows: [] };
+    });
+    const pool = {
+      connect: async () => ({ query, release: vi.fn() }),
+    } as unknown as Pool;
+
+    await withTenantContext(pool, tenantA, async (db) => db.query('SELECT 1'));
+
+    const membershipCall = calls.find((call) => call.text.startsWith('SELECT 1 FROM members'));
+    expect(membershipCall?.text).toContain('company_id = $1 AND id = $2');
+    expect(membershipCall?.values).toEqual([tenantA.companyId, tenantA.memberId]);
+  });
   it('uses tenant context in repository queries and never exposes an unscoped get-by-id API', async () => {
     const repositorySource = await readFile(
       fileURLToPath(new URL('./repositories.ts', import.meta.url)),
