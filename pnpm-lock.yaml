@@ -32,6 +32,9 @@ importers:
       '@vision-codef/workflow-engine':
         specifier: workspace:*
         version: link:../../packages/workflow-engine
+      dotenv:
+        specifier: 16.4.7
+        version: 16.4.7
       livekit-server-sdk:
         specifier: ^2.18.0
         version: 2.18.0

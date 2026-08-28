@@ -15,6 +15,7 @@
     "@vision-codef/contracts": "workspace:*",
     "@vision-codef/database": "workspace:*",
     "@vision-codef/workflow-engine": "workspace:*",
+    "dotenv": "16.4.7",
     "livekit-server-sdk": "^2.18.0"
   },
   "devDependencies": {

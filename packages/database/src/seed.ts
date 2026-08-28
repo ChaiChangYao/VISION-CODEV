@@ -3,11 +3,11 @@ import { createPool, withTenantContext } from './client.js';
 import { migrate } from './migrate.js';
 
 export const DEMO_IDS = {
-  company: '018f2d7e-4e8a-7b1a-8c42-3c8b9c5d1001',
-  member: '018f2d7e-4e8a-7b1a-8c42-3c8b9c5d1002',
-  workflow: '018f2d7e-4e8a-7b1a-8c42-3c8b9c5d1003',
-  capture: '018f2d7e-4e8a-7b1a-8c42-3c8b9c5d1004',
-  graph: '018f2d7e-4e8a-7b1a-8c42-3c8b9c5d1005',
+  company: '00000000-0000-7000-8000-000000000001',
+  member: '00000000-0000-4000-8000-000000000002',
+  workflow: '00000000-0000-4000-8000-000000000003',
+  capture: '00000000-0000-4000-8000-000000000004',
+  graph: '00000000-0000-4000-8000-000000000005',
 };
 
 export async function seedDemo(connectionString?: string): Promise<void> {

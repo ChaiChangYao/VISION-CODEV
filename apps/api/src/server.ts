@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { EgressStatus, WebhookReceiver } from 'livekit-server-sdk';
 import { randomInt, randomUUID } from 'node:crypto';
