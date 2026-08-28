@@ -110,7 +110,7 @@ export type DeploymentView = {
     confidence: number;
     persistenceMs: number;
   };
-  why?: { text: string; evidenceIds: string[]; procedureVersion: number };
+  why?: { text: string; evidenceIds: string[]; procedureVersion: number; provenance: string[] };
 };
 
 export type VoiceEventInput =
@@ -240,6 +240,7 @@ function normalizeDeployment(value: unknown): DeploymentView {
           text: String(why.text),
           evidenceIds: Array.isArray(why.evidenceIds) ? why.evidenceIds.map(String) : [],
           procedureVersion: Number(why.procedureVersion ?? 0),
+          provenance: Array.isArray(why.provenance) ? why.provenance.map(String) : [],
         }
       : undefined,
   };

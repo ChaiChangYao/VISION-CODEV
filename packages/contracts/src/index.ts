@@ -16,6 +16,14 @@ export const ProvenanceClassSchema = z.enum([
 ]);
 export type ProvenanceClass = z.infer<typeof ProvenanceClassSchema>;
 
+export const WhyResponseSchema = z.object({
+  text: z.string().min(1),
+  evidenceIds: z.array(IdSchema),
+  procedureVersion: z.number().int().positive(),
+  provenance: z.array(ProvenanceClassSchema).min(1),
+});
+export type WhyResponse = z.infer<typeof WhyResponseSchema>;
+
 export const WorkflowFamilySchema = z.enum(['golden_run', 'camera_automation', 'ambiguous']);
 export type WorkflowFamily = z.infer<typeof WorkflowFamilySchema>;
 

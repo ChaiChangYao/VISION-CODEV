@@ -22,6 +22,7 @@ await request(`/v1/workflows/${workflow.id}/procedure-graph/publish`, {
   body: JSON.stringify({ graph, reviewerNote: 'Reviewed by the Golden Run acceptance smoke test.' }),
 });
 const deployment = await request(`/v1/workflows/${workflow.id}/deployments`, { method: 'POST' });
+if (!deployment.why || deployment.why.procedureVersion !== 1 || !deployment.why.provenance.includes('PUBLISHED_REQUIREMENT')) throw new Error('Why response is not linked to the approved requirement.');
 const opened = await request(`/v1/deployments/${deployment.id}/voice`, { method: 'POST', body: JSON.stringify({ type: 'OPEN' }) });
 const speaking = await request(`/v1/deployments/${deployment.id}/voice`, { method: 'POST', body: JSON.stringify({ type: 'GUIDANCE_START', stepId: deployment.currentInstruction ? 'current' : undefined }) });
 const interruptedVoice = await request(`/v1/deployments/${deployment.id}/voice`, { method: 'POST', body: JSON.stringify({ type: 'INTERRUPT', reason: 'paper-crane observation requires attention' }) });

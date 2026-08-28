@@ -4,7 +4,7 @@ import { EgressStatus, WebhookReceiver } from 'livekit-server-sdk';
 import { randomInt } from 'node:crypto';
 import { URL } from 'node:url';
 import { generateUuidV7 } from '@vision-codef/database';
-import { ProcessingCompletionSchema, ProcedureGraphSchema, VoiceEventSchema, WorkflowIntentSchema, type EventEnvelope, type ProcessingCompletion, type ProcedureGraph, type WorkflowIntent } from '@vision-codef/contracts';
+import { ProcessingCompletionSchema, ProcedureGraphSchema, VoiceEventSchema, WhyResponseSchema, WorkflowIntentSchema, type EventEnvelope, type ProcessingCompletion, type ProcedureGraph, type WorkflowIntent } from '@vision-codef/contracts';
 import { DevelopmentStore, type CaptureSession, type DeploymentRun, type MediaAsset, type Workflow } from './store.js';
 import { evaluatePaperCraneObservation, PAPER_CRANE_POLICY } from './paper-crane.js';
 import { issueLiveKitToken } from './livekit-token.js';
@@ -25,7 +25,7 @@ const now = () => new Date().toISOString();
 const id = () => generateUuidV7();
 const liveKitConfigured = Boolean(process.env.LIVEKIT_API_KEY && process.env.LIVEKIT_API_SECRET && process.env.LIVEKIT_URL);
 const membershipDirectory = createMembershipDirectory();
-function deploymentView(run: DeploymentRun) { const workflow = getWorkflow(run.workflowId, run.companyId); return { ...run, status: run.status === 'active' ? 'monitoring' : run.status, totalSteps: workflow.graph?.steps.length ?? 0, currentInstruction: workflow.graph?.steps[run.currentStep]?.instruction, intervention: run.intervention }; }
+function deploymentView(run: DeploymentRun) { const workflow = getWorkflow(run.workflowId, run.companyId); const graph = workflow.graph; const step = graph?.steps[run.currentStep]; const why = graph && step ? WhyResponseSchema.parse({ text: `This instruction is taken from approved procedure version ${graph.version}.`, evidenceIds: step.evidenceRefs, procedureVersion: graph.version, provenance: step.provenance }) : undefined; return { ...run, status: run.status === 'active' ? 'monitoring' : run.status, totalSteps: graph?.steps.length ?? 0, currentInstruction: step?.instruction, intervention: run.intervention, why }; }
 
 function classify(text: string): WorkflowIntent {
   const value = text.toLowerCase();
