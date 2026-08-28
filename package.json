@@ -8,6 +8,7 @@
     "dev": "turbo run dev --parallel",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "interaction:check": "node scripts/verify-interaction-inventory.mjs",
     "lint": "turbo run lint",
     "test": "turbo run test",
     "typecheck": "turbo run typecheck"
@@ -18,4 +19,3 @@
     "typescript": "^5.9.2"
   }
 }
-

@@ -80,6 +80,7 @@ export default function NewChatPage() {
               <label htmlFor="workflow-brief">Workflow brief</label>
               <textarea
                 id="workflow-brief"
+                data-interaction-id="composer-text"
                 value={brief}
                 onChange={(event) => setBrief(event.target.value)}
                 placeholder="For example: capture how our lead technician inspects a brake assembly…"
@@ -92,6 +93,7 @@ export default function NewChatPage() {
               </span>
               <Button
                 id="composer-submit"
+                data-interaction-id="composer-submit"
                 type="submit"
                 variant="primary"
                 disabled={!brief.trim() || isSubmitting}
@@ -128,6 +130,7 @@ export default function NewChatPage() {
           <h3>Detected intent</h3>
           <button
             id="intent-golden-run"
+            data-interaction-id="intent-golden-run"
             className={`routing-option ${family === 'golden_run' ? 'routing-option-selected' : ''}`}
             onClick={() => {
               setFamily('golden_run');
@@ -145,6 +148,7 @@ export default function NewChatPage() {
           </button>
           <button
             id="intent-needs-clarification"
+            data-interaction-id="intent-needs-clarification"
             className={`routing-option ${family === 'ambiguous' ? 'routing-option-selected' : ''}`}
             onClick={() => {
               setFamily('ambiguous');

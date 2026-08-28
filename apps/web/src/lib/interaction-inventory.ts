@@ -148,6 +148,13 @@ export const interactionInventory: InteractionInventoryEntry[] = [
     kind: 'button',
     automated: true,
   },
+  {
+    id: 'approve-instruction',
+    route: '/workflows/:id/approve',
+    label: 'Procedure instruction editor',
+    kind: 'input',
+    automated: true,
+  },
 ];
 
 export default interactionInventory;
