@@ -26,7 +26,7 @@ Secondary CCTV, ONVIF, Camera Automation, billing depth, exports, and analytics 
 
 ## Development
 
-Copy `.env.example` to `.env`, start local dependencies with `pnpm infra:up` once the foundation phase lands, then use `pnpm dev`.
+Copy `.env.example` to `.env`, start the first-slice dependencies with `docker compose -f infra/docker-compose.yml up -d`, run `./infra/healthcheck.ps1`, then run the database migration/seed commands in `infra/README.md`. Use `pnpm dev` for development or run `pnpm build` followed by `pnpm --filter @vision-codef/api start` and `pnpm --filter @vision-codef/web start` for compiled services.
 
 All tenant data is company-scoped. The demonstrator is not a certified safety system and must not be used as a substitute for approved safety procedures or trained personnel.
 

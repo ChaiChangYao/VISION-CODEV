@@ -18,4 +18,4 @@ The API deliberately reports `connecting`/`pending` when LiveKit credentials and
 
 Physical-device acceptance is not claimed. A real Android or iPhone, Bluetooth headset, LiveKit credentials, Egress storage, and current Chrome monitor session are still required to prove pairing, foreground camera/audio publishing, desktop subscription, and canonical media persistence.
 
-Directly launching compiled API output is also deferred until package bundling resolves workspace `.js` import paths; the supported local runner is `pnpm --filter ./apps/api exec tsx src/server.ts`.
+Workspace runtime packages emit JavaScript with conditional source/development exports. The compiled API was started with `node apps/api/dist/server.js` and answered `/health`; development uses the explicit source condition in the package `dev` script.
