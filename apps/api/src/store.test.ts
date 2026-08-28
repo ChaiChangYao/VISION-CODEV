@@ -16,9 +16,13 @@ describe('DevelopmentStore persistence lifecycle', () => {
     const store = new DevelopmentStore(persistence);
     await store.ready;
     expect(store.workflows.has('restored')).toBe(true);
+    store.deployments.set('deployment', { id: 'deployment', companyId: 'company', workflowId: 'restored', status: 'active', currentStep: 1, deviations: [], paperState: { status: 'interrupted', observedSinceMs: 1000 }, intervention: { recoveryStepId: 'step-1' } });
     await store.flush();
     await store.close();
     expect(persistence.save).toHaveBeenCalledOnce();
+    const flushedStore = vi.mocked(persistence.save).mock.calls[0]?.[0];
+    expect(flushedStore?.deployments.get('deployment')?.intervention).toEqual({ recoveryStepId: 'step-1' });
+    expect(flushedStore?.deployments.get('deployment')?.paperState).toEqual({ status: 'interrupted', observedSinceMs: 1000 });
     expect(persistence.close).toHaveBeenCalledOnce();
   });
 });

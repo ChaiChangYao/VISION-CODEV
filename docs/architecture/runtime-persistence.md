@@ -4,7 +4,7 @@ The API demonstrator keeps its domain-shaped state in `DevelopmentStore` so the
 vertical slice remains easy to run locally. When `VISION_CODEF_PERSISTENCE=postgres`
 is set, the same store hydrates from and flushes to PostgreSQL `api_runtime_state`
 using a transaction-local `TenantContext`. The table is protected by forced RLS;
-deployment state, capture state, media references, workflows, and audit events are
+deployment state (including paper-crane observation state and approved recovery intervention), capture state, media references, workflows, and audit events are
 all company-prefixed and persisted.
 
 Before starting the API in PostgreSQL mode, run:
