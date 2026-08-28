@@ -16,6 +16,13 @@ const workflow = await request('/v1/workflows', {
   method: 'POST',
   body: JSON.stringify({ brief: 'Teach me a maintenance procedure for folding a paper crane' }),
 });
+const capture = await request(`/v1/workflows/${workflow.id}/capture-sessions`, { method: 'POST' });
+const prematureStart = await fetch(`${baseUrl}/v1/capture-sessions/${capture.id}/start`, {
+  method: 'POST',
+  headers: { 'content-type': 'application/json', ...tenantHeaders },
+});
+const prematureBody = await prematureStart.json();
+if (prematureStart.status !== 409 || prematureBody?.data?.error?.code !== 'CONFLICT') throw new Error('capture start must require a claimed native phone session');
 const graph = await request(`/v1/workflows/${workflow.id}/procedure-graph`);
 await request(`/v1/workflows/${workflow.id}/procedure-graph/publish`, {
   method: 'POST',
