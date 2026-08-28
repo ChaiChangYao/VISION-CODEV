@@ -8,8 +8,8 @@ Implemented locally; physical/provider verification pending.
 
 - Made LiveKit Egress the canonical server-side recording path.
 - Added capture and media-asset lifecycle state handling.
-- Added bounded mobile rolling recovery buffering.
-- Added timestamp/checksum-oriented recovery contracts without a competing canonical upload.
+- Added bounded mobile rolling recovery buffering with file-backed manifest rehydration.
+- Added timestamp/checksum-oriented recovery contracts without a competing canonical upload. Mobile recovery segments use fail-closed SHA-256 verification on the physical capture path.
 - Added company-scoped desktop monitor token issuance.
 
 ## Verification
