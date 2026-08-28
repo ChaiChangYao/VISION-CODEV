@@ -1,4 +1,4 @@
-import { MediaObjectReferenceSchema, type MediaObjectReference, type ProcessingMetadata } from '@vision-codef/contracts';
+import { MediaObjectReferenceSchema, ProcessingCompletionSchema, ProcedureGraphSchema, type MediaObjectReference, type ProcessingCompletion, type ProcessingMetadata, type ProcedureGraph } from '@vision-codef/contracts';
 
 export type ProcessingActivityContext = {
   companyId: string;
@@ -9,13 +9,14 @@ export type ProcessingActivityContext = {
   idempotencyKey: string;
 };
 
-export type ProcessingArtifact = MediaObjectReference & { kind: 'media' | 'transcript' | 'observations' | 'procedure-draft' };
+export type ProcessingArtifact = MediaObjectReference & { kind: 'media' | 'transcript' | 'observations' | 'procedure-draft'; normalizedGraph?: ProcedureGraph };
 
 export type ProcessingActivityHandlers = {
   finalizeCapture(input: ProcessingActivityContext): Promise<ProcessingArtifact>;
   transcribe(input: ProcessingActivityContext & { finalized: ProcessingArtifact }): Promise<ProcessingArtifact>;
   extractObservations(input: ProcessingActivityContext & { finalized: ProcessingArtifact; transcript: ProcessingArtifact }): Promise<ProcessingArtifact>;
   induceProcedure(input: ProcessingActivityContext & { finalized: ProcessingArtifact; transcript: ProcessingArtifact; observations: ProcessingArtifact }): Promise<ProcessingArtifact>;
+  persistProcessingCompletion?(input: ProcessingCompletion): Promise<void>;
 };
 
 export type ProcessingActivities = {
@@ -23,11 +24,13 @@ export type ProcessingActivities = {
   transcribe(input: ProcessingActivityContext & { finalized: ProcessingArtifact }): Promise<ProcessingArtifact>;
   extractObservations(input: ProcessingActivityContext & { finalized: ProcessingArtifact; transcript: ProcessingArtifact }): Promise<ProcessingArtifact>;
   induceProcedure(input: ProcessingActivityContext & { finalized: ProcessingArtifact; transcript: ProcessingArtifact; observations: ProcessingArtifact }): Promise<ProcessingArtifact>;
+  persistProcessingCompletion(input: ProcessingCompletion): Promise<void>;
 };
 
 function validateArtifact(value: ProcessingArtifact): ProcessingArtifact {
   MediaObjectReferenceSchema.parse(value);
   if (!['media', 'transcript', 'observations', 'procedure-draft'].includes(value.kind)) throw new Error('Processing activity returned an invalid artifact kind.');
+  if (value.normalizedGraph) ProcedureGraphSchema.parse(value.normalizedGraph);
   return value;
 }
 
@@ -37,5 +40,10 @@ export function createProcessingActivities(handlers: ProcessingActivityHandlers)
     async transcribe(input) { return validateArtifact(await handlers.transcribe(input)); },
     async extractObservations(input) { return validateArtifact(await handlers.extractObservations(input)); },
     async induceProcedure(input) { return validateArtifact(await handlers.induceProcedure(input)); },
+    async persistProcessingCompletion(input) {
+      const completion = ProcessingCompletionSchema.parse(input);
+      if (!handlers.persistProcessingCompletion) throw new Error('CompletionSinkUnavailableError');
+      await handlers.persistProcessingCompletion(completion);
+    },
   };
 }

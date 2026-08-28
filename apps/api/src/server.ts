@@ -2,12 +2,14 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { EgressStatus, WebhookReceiver } from 'livekit-server-sdk';
 import { createHash, randomInt, randomUUID } from 'node:crypto';
 import { URL } from 'node:url';
-import { WorkflowIntentSchema, type EventEnvelope, type ProcedureGraph, type WorkflowIntent } from '@vision-codef/contracts';
+import { ProcessingCompletionSchema, WorkflowIntentSchema, type EventEnvelope, type ProcessingCompletion, type ProcedureGraph, type WorkflowIntent } from '@vision-codef/contracts';
 import { DevelopmentStore, type CaptureSession, type DeploymentRun, type MediaAsset, type Workflow } from './store.js';
 import { evaluatePaperCraneObservation, PAPER_CRANE_POLICY } from './paper-crane.js';
 import { issueLiveKitToken } from './livekit-token.js';
 import { canonicalObjectKey, getCanonicalEgressConfig, startCanonicalEgress, stopCanonicalEgress } from './livekit-egress.js';
 import { getProcessingMetadata, startCaptureProcessing } from './processing-client.js';
+import { verifyProcessingCompletionSignature } from './processing-webhook.js';
+import { createMembershipDirectory } from './membership.js';
 import { parseTenantContext, TenantContextError } from './tenant-context.js';
 import type { DeviationState } from '@vision-codef/workflow-engine';
 
@@ -16,6 +18,7 @@ const store = new DevelopmentStore();
 const now = () => new Date().toISOString();
 const id = () => randomUUID();
 const liveKitConfigured = Boolean(process.env.LIVEKIT_API_KEY && process.env.LIVEKIT_API_SECRET && process.env.LIVEKIT_URL);
+const membershipDirectory = createMembershipDirectory();
 const paperStates = new Map<string, DeviationState>();
 const interventions = new Map<string, Record<string, unknown>>();
 function deploymentView(run: DeploymentRun) { const workflow = getWorkflow(run.workflowId, run.companyId); return { ...run, status: run.status === 'active' ? 'monitoring' : run.status, totalSteps: workflow.graph?.steps.length ?? 0, currentInstruction: workflow.graph?.steps[run.currentStep]?.instruction, intervention: interventions.get(run.id) }; }
@@ -63,7 +66,7 @@ async function monitorView(capture: CaptureSession, companyId: string, memberId:
 }
 
 async function queueCaptureProcessing(capture: CaptureSession, asset: MediaAsset | undefined, companyId: string): Promise<void> {
-  if (capture.processingStatus === 'submitted') return;
+  if (capture.processingStatus === 'submitted' || capture.processingStatus === 'completed') return;
   const workflow = getWorkflow(capture.workflowId, companyId);
   capture.state = 'processing';
   workflow.status = 'Processing';
@@ -106,14 +109,36 @@ async function queueCaptureProcessing(capture: CaptureSession, asset: MediaAsset
     event(companyId, 'capture.processing.failed', { state: capture.state, reason: capture.processingBlockReason }, capture.workflowId, capture.id);
   }
 }
+function applyProcessingCompletion(input: ProcessingCompletion): { duplicate: boolean; capture: CaptureSession; workflow: Workflow } {
+  const objectPrefix = 'companies/' + input.companyId + '/';
+  const references = [input.finalized, input.transcript, input.observations, input.procedureDraft];
+  if (references.some((reference) => reference.companyId !== input.companyId || !reference.objectKey.startsWith(objectPrefix))) throw new HttpError(403, 'FORBIDDEN_TENANT', 'Processing artifacts must belong to the completion company.');
+  const capture = store.captures.get(input.captureSessionId);
+  if (!capture || capture.companyId !== input.companyId || capture.workflowId !== input.workflowId) throw new HttpError(404, 'NOT_FOUND', 'The processing capture session was not found.');
+  const asset = capture.mediaAssetId ? store.mediaAssets.get(capture.mediaAssetId) : undefined;
+  if (!asset || asset.companyId !== input.companyId || asset.objectKey !== input.finalized.objectKey || asset.state !== 'available') throw new HttpError(409, 'CONFLICT', 'Processing completion does not match an available canonical media asset.');
+  const workflow = getWorkflow(capture.workflowId, input.companyId);
+  if (capture.processingStatus === 'completed') return { duplicate: true, capture, workflow };
+  capture.state = 'completed';
+  capture.processingStatus = 'completed';
+  capture.processingBlockReason = undefined;
+  capture.processingMetadata = input.metadata;
+  capture.processingArtifacts = { finalized: input.finalized, transcript: input.transcript, observations: input.observations, procedureDraft: input.procedureDraft };
+  workflow.graph = { ...input.normalizedGraph, published: false };
+  workflow.status = 'Needs Review';
+  workflow.updatedAt = now();
+  event(input.companyId, 'capture.processing.completed', { state: capture.state, procedureGraphVersion: workflow.graph.version }, workflow.id, capture.id);
+  return { duplicate: false, capture, workflow };
+}
 async function route(request: IncomingMessage, response: ServerResponse) {
   const traceId = id(); const url = new URL(request.url ?? '/', `http://${request.headers.host ?? 'localhost'}`); const method = request.method ?? 'GET';
   if (method === 'OPTIONS') { send(response, 204, null, traceId); return; }
   if (url.pathname === '/health' && method === 'GET') { send(response, 200, { status: 'ok', service: 'api', time: now() }, traceId); return; }
   const path = url.pathname.startsWith('/api/v1/') ? url.pathname.slice(4) : url.pathname;
   if (!path.startsWith('/v1/')) throw new HttpError(404, 'NOT_FOUND', 'Route was not found.');
+  if (path === '/v1/internal/processing-completions' && method === 'POST') { const raw = await readBody(request); const secret = process.env.VISION_CODEF_PROCESSING_WEBHOOK_SECRET; if (!secret) throw new HttpError(503, 'EXTERNAL_PROVIDER_UNAVAILABLE', 'Processing completion verification is not configured.'); const signature = request.headers['x-vision-codef-signature']; if (Array.isArray(signature) || !verifyProcessingCompletionSignature(raw, signature, secret)) throw new HttpError(401, 'UNAUTHENTICATED', 'Processing completion signature verification failed.'); let input: ProcessingCompletion; try { input = ProcessingCompletionSchema.parse(JSON.parse(raw)); } catch (error) { throw new HttpError(400, 'VALIDATION_FAILED', error instanceof Error ? error.message : 'Processing completion payload is invalid.'); } const result = applyProcessingCompletion(input); send(response, 200, { accepted: true, duplicate: result.duplicate, captureSessionId: result.capture.id, workflowId: result.workflow.id, processingStatus: result.capture.processingStatus }, traceId); return; }
   if (path === '/v1/webhooks/livekit' && method === 'POST') { const raw = await readBody(request); const apiKey = process.env.LIVEKIT_WEBHOOK_API_KEY ?? process.env.LIVEKIT_API_KEY; const apiSecret = process.env.LIVEKIT_WEBHOOK_API_SECRET ?? process.env.LIVEKIT_API_SECRET; if (!apiKey || !apiSecret) throw new HttpError(503, 'EXTERNAL_PROVIDER_UNAVAILABLE', 'LiveKit webhook verification is not configured.'); let webhook; try { webhook = await new WebhookReceiver(apiKey, apiSecret).receive(raw, request.headers.authorization); } catch (error) { throw new HttpError(401, 'UNAUTHENTICATED', error instanceof Error ? error.message : 'LiveKit webhook verification failed.'); } if (webhook.event !== 'egress_ended' || !webhook.egressInfo) { send(response, 200, { received: true, handled: false, event: webhook.event }, traceId); return; } const info = webhook.egressInfo; const asset = [...store.mediaAssets.values()].find((value) => value.egressId === info.egressId); if (!asset) { send(response, 202, { received: true, handled: false, reason: 'No matching media asset.' }, traceId); return; } const capture = getCapture(asset.captureSessionId, asset.companyId); if (info.status === EgressStatus.EGRESS_COMPLETE && !info.error) { asset.state = 'available'; await queueCaptureProcessing(capture, asset, asset.companyId); } else { asset.state = 'failed'; capture.state = 'failed'; capture.processingStatus = 'failed'; capture.processingBlockReason = info.error || 'LiveKit Egress ended without a complete media object.'; getWorkflow(capture.workflowId, asset.companyId).status = 'Processing Failed'; } event(asset.companyId, 'capture.egress.ended', { egressId: info.egressId, status: info.status, mediaAssetState: asset.state, processingStatus: capture.processingStatus }, capture.workflowId, capture.id); send(response, 200, { received: true, handled: true, egressId: info.egressId, mediaAsset: asset, processingStatus: capture.processingStatus }, traceId); return; }
-  const { companyId, memberId } = parseTenantContext(request.headers);
+  const { companyId, memberId } = parseTenantContext(request.headers); if (!membershipDirectory.has({ companyId, memberId })) throw new HttpError(403, 'FORBIDDEN', 'The authenticated member is not a member of this company.');
   const parts = path.split('/').filter(Boolean).slice(1); const payload = ['POST', 'PATCH', 'PUT'].includes(method) ? await readJson(request) : {};
   if (parts[0] === 'capture-token' && parts.length === 1 && method === 'POST') { const sessionId = String(payload.sessionId ?? ''); const workflowId = String(payload.workflowId ?? ''); const deviceId = String(payload.deviceId ?? ''); const capture = getCapture(sessionId, companyId); if (workflowId !== capture.workflowId) throw new HttpError(403, 'FORBIDDEN_TENANT', 'The capture session does not belong to the requested workflow.'); if (String(payload.memberId ?? '') !== memberId) throw new HttpError(403, 'FORBIDDEN_TENANT', 'The token member must match the authenticated request member.'); if (!capture.pairedDeviceId || !deviceId || deviceId !== capture.pairedDeviceId) throw new HttpError(403, 'FORBIDDEN_TENANT', 'The phone must claim this capture session before a publisher token is issued.'); if (!liveKitConfigured) throw new HttpError(503, 'EXTERNAL_PROVIDER_UNAVAILABLE', 'LiveKit credentials are not configured.'); const issued = await issueLiveKitToken({ companyId, memberId, workflowId: capture.workflowId, sessionId: capture.id, role: 'publisher' }); send(response, 200, issued, traceId); return; }
   if (parts[0] === 'workflows' && parts[1] === 'intent' && method === 'POST') { send(response, 200, classify(String(payload.brief ?? payload.text ?? '')), traceId); return; }

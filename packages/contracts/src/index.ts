@@ -137,6 +137,21 @@ export const ProcedureGraphSchema = z.object({
 });
 export type ProcedureGraph = z.infer<typeof ProcedureGraphSchema>;
 
+export const ProcessingCompletionSchema = z.object({
+  contractVersion: z.literal(CONTRACT_VERSION),
+  companyId: CompanyIdSchema,
+  workflowId: IdSchema,
+  captureSessionId: IdSchema,
+  finalized: MediaObjectReferenceSchema,
+  transcript: MediaObjectReferenceSchema,
+  observations: MediaObjectReferenceSchema,
+  procedureDraft: MediaObjectReferenceSchema,
+  normalizedGraph: ProcedureGraphSchema.refine((graph) => !graph.published, 'Processing completion graphs must be unpublished drafts.'),
+  metadata: ProcessingMetadataSchema,
+  completedAt: TimestampSchema,
+});
+export type ProcessingCompletion = z.infer<typeof ProcessingCompletionSchema>;
+
 export const EventEnvelopeSchema = z.object({
   eventId: IdSchema,
   schemaVersion: z.literal(CONTRACT_VERSION),

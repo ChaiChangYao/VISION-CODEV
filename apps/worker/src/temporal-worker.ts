@@ -1,7 +1,8 @@
 import { NativeConnection, Worker } from '@temporalio/worker';
 import { fileURLToPath } from 'node:url';
 import { PROCESSING_TASK_QUEUE } from './worker.js';
-import type { ProcessingActivities } from './processing-activities.js';
+import { createProcessingActivities, type ProcessingActivities, type ProcessingActivityHandlers } from './processing-activities.js';
+import { configuredProcessingCompletionSink } from './processing-completion-sink.js';
 
 export async function runTemporalWorker(activities: ProcessingActivities): Promise<void> {
   const address = process.env.TEMPORAL_ADDRESS;
@@ -15,4 +16,13 @@ export async function runTemporalWorker(activities: ProcessingActivities): Promi
     activities,
   });
   await worker.run();
+}
+
+export function createConfiguredProcessingActivities(
+  handlers: Omit<ProcessingActivityHandlers, 'persistProcessingCompletion'>,
+  env: NodeJS.ProcessEnv = process.env,
+): ProcessingActivities {
+  const completionSink = configuredProcessingCompletionSink(env);
+  if (!completionSink) throw new Error('PROCESSING_COMPLETION_URL and VISION_CODEF_PROCESSING_WEBHOOK_SECRET are required to run the processing worker.');
+  return createProcessingActivities({ ...handlers, persistProcessingCompletion: completionSink });
 }
