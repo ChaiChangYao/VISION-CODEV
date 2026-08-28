@@ -10,8 +10,15 @@ import {
   type CaptureMachineState,
 } from '../capture/captureSessionMachine';
 import { LiveKitAudioRouteManager, type AudioRouteManager } from '../audio/audioRouteManager';
-import type { CaptureSnapshot, DeviceOrientation, FacingMode, RecoveryRequest, RecoverySegment } from '../types';
+import type {
+  CaptureSnapshot,
+  DeviceOrientation,
+  FacingMode,
+  RecoveryRequest,
+  RecoverySegment,
+} from '../types';
 import { LiveKitPhoneClient } from './livekitPhoneClient';
+import { FileSystemRecoveryStore } from '../recovery/fileSystemRecoveryStore';
 import { RollingRecoveryBuffer } from '../recovery/rollingRecoveryBuffer';
 
 const WAKE_TAG = 'vision-codef-capture';
@@ -34,7 +41,7 @@ export class PhoneCaptureSession {
 
   constructor(
     options: ConstructorParameters<typeof LiveKitPhoneClient>[0],
-    recoveryBuffer = new RollingRecoveryBuffer(),
+    recoveryBuffer = new RollingRecoveryBuffer({ store: new FileSystemRecoveryStore() }),
   ) {
     this.sessionId = options.sessionId ?? '';
     this.audio = new LiveKitAudioRouteManager();
@@ -42,7 +49,12 @@ export class PhoneCaptureSession {
     this.recoveryBuffer = recoveryBuffer;
     this.client = new LiveKitPhoneClient({
       ...options,
-      onConnected: () => this.apply(this.machine.capture === 'paused' || this.machine.capture === 'active' ? { type: 'RECONNECTED' } : { type: 'ROOM_CONNECTED' }),
+      onConnected: () =>
+        this.apply(
+          this.machine.capture === 'paused' || this.machine.capture === 'active'
+            ? { type: 'RECONNECTED' }
+            : { type: 'ROOM_CONNECTED' },
+        ),
       onReconnecting: () => this.apply({ type: 'RECONNECTING' }),
       onReconnected: () => this.apply({ type: 'RECONNECTED' }),
       onDisconnected: (reason) =>
@@ -168,7 +180,8 @@ export class PhoneCaptureSession {
   }
 
   dispose(): void {
-    this.orientationSubscription && ScreenOrientation.removeOrientationChangeListener(this.orientationSubscription);
+    this.orientationSubscription &&
+      ScreenOrientation.removeOrientationChangeListener(this.orientationSubscription);
     this.orientationSubscription = undefined;
     this.appStateSubscription?.remove();
     this.appStateSubscription = undefined;
@@ -180,10 +193,12 @@ export class PhoneCaptureSession {
   private async startOrientationObservation(): Promise<void> {
     if (this.orientationSubscription) return;
     this.orientation = toDeviceOrientation(await ScreenOrientation.getOrientationAsync());
-    this.orientationSubscription = ScreenOrientation.addOrientationChangeListener(({ orientationInfo }) => {
-      this.orientation = toDeviceOrientation(orientationInfo.orientation);
-      this.emit();
-    });
+    this.orientationSubscription = ScreenOrientation.addOrientationChangeListener(
+      ({ orientationInfo }) => {
+        this.orientation = toDeviceOrientation(orientationInfo.orientation);
+        this.emit();
+      },
+    );
     this.emit();
   }
 
@@ -195,14 +210,24 @@ export class PhoneCaptureSession {
       void this.client.disconnect(true);
       return;
     }
-    if (nextState === 'active' && this.machine.capture === 'paused' && this.machine.connection === 'reconnecting') {
-      void this.client.connect().then(() => {
-        if (this.machine.capture === 'paused' && this.machine.connection === 'connected') {
-          this.apply({ type: 'RESUME' });
-        }
-      }).catch((error: unknown) => {
-        this.apply({ type: 'FAILED', error: error instanceof Error ? error.message : String(error) });
-      });
+    if (
+      nextState === 'active' &&
+      this.machine.capture === 'paused' &&
+      this.machine.connection === 'reconnecting'
+    ) {
+      void this.client
+        .connect()
+        .then(() => {
+          if (this.machine.capture === 'paused' && this.machine.connection === 'connected') {
+            this.apply({ type: 'RESUME' });
+          }
+        })
+        .catch((error: unknown) => {
+          this.apply({
+            type: 'FAILED',
+            error: error instanceof Error ? error.message : String(error),
+          });
+        });
     }
   };
   private apply(event: CaptureEvent): void {
