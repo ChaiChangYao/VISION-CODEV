@@ -182,11 +182,70 @@ export function reportSummary(report) {
   };
 }
 
+const PHYSICAL_ENVIRONMENT_KEYS = [
+  'EXPO_PUBLIC_LIVEKIT_URL',
+  'EXPO_PUBLIC_CAPTURE_TOKEN_ENDPOINT',
+  'EXPO_PUBLIC_CAPTURE_PAIRING_ENDPOINT',
+  'EXPO_PUBLIC_COMPANY_ID',
+  'EXPO_PUBLIC_MEMBER_ID',
+  'EXPO_PUBLIC_DEVICE_ID',
+];
+
+function isUuid(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
+function isLocalHost(value) {
+  try {
+    const url = new URL(value);
+    return ['localhost', '127.0.0.1', '::1'].includes(url.hostname);
+  } catch {
+    return false;
+  }
+}
+
+export function validatePhysicalEnvironment(environment = process.env, { allowLocalhost = false } = {}) {
+  const errors = [];
+  const missing = PHYSICAL_ENVIRONMENT_KEYS.filter((key) => !environment[key]);
+  if (missing.length > 0) errors.push(`Missing required physical-device variables: ${missing.join(', ')}.`);
+
+  const livekitUrl = environment.EXPO_PUBLIC_LIVEKIT_URL;
+  if (livekitUrl) {
+    try {
+      const parsed = new URL(livekitUrl);
+      if (!['ws:', 'wss:'].includes(parsed.protocol)) errors.push('EXPO_PUBLIC_LIVEKIT_URL must use ws:// or wss://.');
+      if (!allowLocalhost && isLocalHost(livekitUrl)) errors.push('EXPO_PUBLIC_LIVEKIT_URL cannot point to localhost for a physical device.');
+    } catch {
+      errors.push('EXPO_PUBLIC_LIVEKIT_URL must be a valid WebSocket URL.');
+    }
+  }
+
+  for (const key of ['EXPO_PUBLIC_CAPTURE_TOKEN_ENDPOINT', 'EXPO_PUBLIC_CAPTURE_PAIRING_ENDPOINT']) {
+    const value = environment[key];
+    if (!value) continue;
+    try {
+      const parsed = new URL(value);
+      if (!['http:', 'https:'].includes(parsed.protocol)) errors.push(`${key} must use http:// or https://.`);
+      if (!allowLocalhost && isLocalHost(value)) errors.push(`${key} cannot point to localhost for a physical device.`);
+    } catch {
+      errors.push(`${key} must be a valid HTTP URL.`);
+    }
+  }
+
+  for (const key of ['EXPO_PUBLIC_COMPANY_ID', 'EXPO_PUBLIC_MEMBER_ID', 'EXPO_PUBLIC_DEVICE_ID']) {
+    if (environment[key] && !isUuid(environment[key])) errors.push(`${key} must be a UUID.`);
+  }
+  if (environment.EXPO_PUBLIC_CAPTURE_PAIRING_CODE && !/^\d{6}$/.test(environment.EXPO_PUBLIC_CAPTURE_PAIRING_CODE)) {
+    errors.push('EXPO_PUBLIC_CAPTURE_PAIRING_CODE must be six digits when provided.');
+  }
+  return { errors, valuesChecked: PHYSICAL_ENVIRONMENT_KEYS.length };
+}
 function usage() {
   console.log(`Usage:
   node scripts/device-acceptance.mjs init --phase 4|12|15 --out <report.json>
   node scripts/device-acceptance.mjs validate --report <report.json> [--strict]
   node scripts/device-acceptance.mjs checklist --phase 4|12|15
+  node scripts/device-acceptance.mjs preflight [--allow-localhost]
 
 init creates a NOT_RUN report. It never records hardware success.
 validate checks report structure, evidence, and anti-simulation invariants.
@@ -219,7 +278,11 @@ async function main(args) {
     for (const item of definition.checks) console.log(`[ ] ${item.id}: ${item.title}\n    Procedure: ${item.procedure}\n    Expected: ${item.expected}\n`);
     return 0;
   }
-  if (command === 'validate') {
+  if (command === 'preflight') {
+    const validation = validatePhysicalEnvironment(process.env, { allowLocalhost: args.includes('--allow-localhost') });
+    console.log(JSON.stringify({ ...validation, mode: args.includes('--allow-localhost') ? 'local-debug' : 'physical-device' }, null, 2));
+    return validation.errors.length > 0 ? 1 : 0;
+  }  if (command === 'validate') {
     const reportPath = option(args, '--report');
     if (!reportPath) throw new Error('validate requires --report.');
     const report = JSON.parse(await readFile(path.resolve(reportPath), 'utf8'));

@@ -4,6 +4,7 @@ import {
   createReport,
   phaseDefinition,
   reportSummary,
+  validatePhysicalEnvironment,
   validateReport,
 } from './device-acceptance.mjs';
 
@@ -53,6 +54,31 @@ describe('physical device acceptance report harness', () => {
     expect(reportSummary(report)).toMatchObject({ result: 'PASS', checks: { pass: 7, notRun: 0 } });
   });
 
+  it('rejects localhost and incomplete physical-device configuration', () => {
+    const validation = validatePhysicalEnvironment({
+      EXPO_PUBLIC_LIVEKIT_URL: 'ws://localhost:7880',
+      EXPO_PUBLIC_CAPTURE_TOKEN_ENDPOINT: 'http://127.0.0.1:4000/api/capture/token',
+      EXPO_PUBLIC_CAPTURE_PAIRING_ENDPOINT: 'http://localhost:4000/api/capture/pair',
+      EXPO_PUBLIC_COMPANY_ID: 'company',
+      EXPO_PUBLIC_MEMBER_ID: 'member',
+      EXPO_PUBLIC_DEVICE_ID: 'device',
+    });
+    expect(validation.errors).toHaveLength(6);
+    expect(validation.errors.join(' ')).toContain('localhost');
+  });
+
+  it('accepts a complete non-local physical-device configuration', () => {
+    const validation = validatePhysicalEnvironment({
+      EXPO_PUBLIC_LIVEKIT_URL: 'wss://livekit.example.test',
+      EXPO_PUBLIC_CAPTURE_TOKEN_ENDPOINT: 'https://api.example.test/api/capture/token',
+      EXPO_PUBLIC_CAPTURE_PAIRING_ENDPOINT: 'https://api.example.test/api/capture/pair',
+      EXPO_PUBLIC_COMPANY_ID: '11111111-1111-4111-8111-111111111111',
+      EXPO_PUBLIC_MEMBER_ID: '22222222-2222-4222-8222-222222222222',
+      EXPO_PUBLIC_DEVICE_ID: '33333333-3333-4333-8333-333333333333',
+      EXPO_PUBLIC_CAPTURE_PAIRING_CODE: '123456',
+    });
+    expect(validation).toEqual({ errors: [], valuesChecked: 6 });
+  });
   it('requires a concrete blocker when a report is marked BLOCKED', () => {
     const report = createReport(15);
     report.result = 'BLOCKED';
