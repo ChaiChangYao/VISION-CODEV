@@ -199,6 +199,7 @@ export interface PaperCraneFixtureResult {
   passed: boolean;
   interventionLatencyMs?: number | undefined;
   unsupportedRecoveryInvented: boolean;
+  whyResponseProvenanceLinked?: boolean;
 }
 
 export interface PaperCraneMetricReport {

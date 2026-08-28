@@ -63,5 +63,7 @@ describe('paper-crane replay fixtures', () => {
     expect(report.datasetReadyForAccuracyClaim).toBe(false);
     expect(report.claimNote).toContain('Do not claim production accuracy');
     expect(report.metrics.unsupportedRecoveryInventionCount).toBe(0);
+    expect(report.metrics.replayDeterminismRate).toBe(0);
+    expect(report.metrics.whyResponseProvenanceRate).toBe(0);
   });
 });

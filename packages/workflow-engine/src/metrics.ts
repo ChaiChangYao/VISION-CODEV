@@ -41,6 +41,8 @@ export function buildPaperCraneMetricReport(
     result.interventionLatencyMs === undefined ? [] : [result.interventionLatencyMs],
   );
   const ready = isDatasetReadyForAccuracyClaim(dataset);
+  const replayResults = results.filter((result) => result.scenario === 'induction-replay');
+  const whyResults = results.filter((result) => result.whyResponseProvenanceLinked !== undefined);
 
   return {
     datasetReadyForAccuracyClaim: ready,
@@ -71,11 +73,8 @@ export function buildPaperCraneMetricReport(
       unsupportedRecoveryInventionCount: results.filter(
         (result) => result.unsupportedRecoveryInvented,
       ).length,
-      replayDeterminismRate: rate(
-        results.filter((result) => result.scenario !== 'induction-replay' || result.passed).length,
-        results.filter((result) => result.scenario === 'induction-replay').length || 1,
-      ),
-      whyResponseProvenanceRate: 1,
+      replayDeterminismRate: rate(replayResults.filter((result) => result.passed).length, replayResults.length),
+      whyResponseProvenanceRate: rate(whyResults.filter((result) => result.whyResponseProvenanceLinked === true).length, whyResults.length),
     },
     claimNote: ready
       ? 'Dataset prerequisites are present; report this as an evaluation result, not a safety certification.'

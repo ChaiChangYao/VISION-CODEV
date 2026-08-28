@@ -1,4 +1,4 @@
-﻿const baseUrl = (process.env.VISION_CODEF_API_URL ?? 'http://localhost:4000').replace(/\/$/, '');
+const baseUrl = (process.env.VISION_CODEF_API_URL ?? 'http://localhost:4000').replace(/\/$/, '');
 
 const tenantHeaders = { 'x-company-id': process.env.VISION_CODEF_COMPANY_ID ?? '00000000-0000-7000-8000-000000000001', 'x-member-id': process.env.VISION_CODEF_MEMBER_ID ?? '00000000-0000-4000-8000-000000000002' };
 
@@ -19,7 +19,7 @@ const workflow = await request('/v1/workflows', {
 const graph = await request(`/v1/workflows/${workflow.id}/procedure-graph`);
 await request(`/v1/workflows/${workflow.id}/procedure-graph/publish`, {
   method: 'POST',
-  body: JSON.stringify({ graph }),
+  body: JSON.stringify({ graph, reviewerNote: 'Reviewed by the Golden Run acceptance smoke test.' }),
 });
 const deployment = await request(`/v1/workflows/${workflow.id}/deployments`, { method: 'POST' });
 const corners = [{ x: 0, y: 0 }, { x: 100, y: 2 }, { x: 98, y: 100 }, { x: 2, y: 98 }];
