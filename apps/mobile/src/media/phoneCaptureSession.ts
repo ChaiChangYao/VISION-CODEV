@@ -10,6 +10,7 @@ import {
   type CaptureMachineState,
 } from '../capture/captureSessionMachine';
 import { LiveKitAudioRouteManager, type AudioRouteManager } from '../audio/audioRouteManager';
+import type { GuidanceSpeaker } from '../audio/localGuidanceSpeaker';
 import type {
   CaptureSnapshot,
   DeviceOrientation,
@@ -30,9 +31,13 @@ export class PhoneCaptureSession {
   private readonly audio: AudioRouteManager;
   private readonly client: LiveKitPhoneClient;
   private readonly recoveryBuffer: RollingRecoveryBuffer;
+  private readonly guidance: GuidanceSpeaker | undefined;
+  private guidanceUnsubscribe: (() => void) | undefined;
   private sessionId: string;
   private publishedAudio = false;
   private publishedVideo = false;
+  private guidanceAudioActive = false;
+  private guidanceError: string | undefined;
   private egressHealthy = true;
   private recoveryPending = 0;
   private facingMode: FacingMode = 'rear';
@@ -45,13 +50,17 @@ export class PhoneCaptureSession {
       store: new FileSystemRecoveryStore(),
       verifyChecksums: true,
     }),
+    guidance?: GuidanceSpeaker,
   ) {
     this.sessionId = options.sessionId ?? '';
     this.audio = new LiveKitAudioRouteManager();
     this.audio.subscribe(() => this.emit());
     this.recoveryBuffer = recoveryBuffer;
+    this.guidance = guidance;
+    this.guidanceUnsubscribe = guidance?.subscribe(() => this.emit());
     this.client = new LiveKitPhoneClient({
       ...options,
+      receiveGuidanceAudio: guidance ? false : options.receiveGuidanceAudio,
       onConnected: () =>
         this.apply(
           this.machine.capture === 'paused' || this.machine.capture === 'active'
@@ -76,6 +85,21 @@ export class PhoneCaptureSession {
           this.apply({ type: 'PUBLISH_SUCCEEDED' });
         }
       },
+      onGuidanceAudioChanged: (active) => {
+        this.guidanceAudioActive = active;
+        this.emit();
+      },
+      onGuidanceMessage: (message) => {
+        if (!this.guidance) return;
+        if (message.type === 'interrupt') {
+          void this.guidance.interrupt().catch((error: unknown) => this.recordGuidanceError(error));
+          return;
+        }
+        this.guidanceError = undefined;
+        void this.guidance
+          .speak(message.text, { priority: message.priority })
+          .catch((error: unknown) => this.recordGuidanceError(error));
+      },
       onError: (error) => this.apply({ type: 'FAILED', error: error.message }),
     });
   }
@@ -94,9 +118,10 @@ export class PhoneCaptureSession {
       facingMode: this.facingMode,
       orientation: this.orientation,
       audioRoute: this.audio.current(),
+      guidanceAudioActive: this.guidance?.isSpeaking() ?? this.guidanceAudioActive,
       egressHealthy: this.egressHealthy,
       recoveryPending: this.recoveryPending,
-      ...(this.machine.error ? { error: this.machine.error } : {}),
+      ...(this.machine.error || this.guidanceError ? { error: this.machine.error ?? this.guidanceError } : {}),
     };
   }
 
@@ -188,6 +213,9 @@ export class PhoneCaptureSession {
     this.orientationSubscription = undefined;
     this.appStateSubscription?.remove();
     this.appStateSubscription = undefined;
+    this.guidanceUnsubscribe?.();
+    this.guidanceUnsubscribe = undefined;
+    void this.guidance?.dispose();
     deactivateKeepAwake(WAKE_TAG);
     void this.client.disconnect();
     void this.audio.stop();
@@ -237,6 +265,11 @@ export class PhoneCaptureSession {
     const next = transition(this.machine, event).to;
     if (next === this.machine) return;
     this.machine = next;
+    this.emit();
+  }
+
+  private recordGuidanceError(error: unknown): void {
+    this.guidanceError = error instanceof Error ? error.message : String(error);
     this.emit();
   }
 

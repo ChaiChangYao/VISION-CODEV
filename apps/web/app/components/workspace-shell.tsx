@@ -2,171 +2,115 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useState, type ReactNode } from 'react';
-import { Avatar, Badge, Divider, Icon } from '@vision-codef/ui';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { Icon } from '@vision-codef/ui';
+import { getApiClient, type WorkflowSummary } from '../../src/lib/api-client';
 
-const primaryNav = [
-  { href: '/workspace', label: 'Overview', icon: 'home' as const },
-  { href: '/new-chat', label: 'New Chat', icon: 'sparkles' as const },
-  { href: '/workflows', label: 'Workflows', icon: 'layers' as const },
-];
-const resourceNav = [
-  { href: '/devices', label: 'Devices', icon: 'video' as const },
-  { href: '/documents', label: 'Documents', icon: 'file-text' as const },
+const workspaceNav = [
+  { href: '/new-chat', label: 'New reasoning task', icon: 'plus' as const, primary: true },
+  { href: '/documents', label: 'Knowledge library', icon: 'book' as const },
+  { href: '/workflows', label: 'Scheduled reviews', icon: 'clock' as const },
+  { href: '/settings', label: 'Plugins', icon: 'link' as const },
 ];
 
 export function WorkspaceShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [accountOpen, setAccountOpen] = useState(false);
+  const [workflows, setWorkflows] = useState<WorkflowSummary[]>([]);
+  const api = useMemo(() => getApiClient(), []);
+  const activeWorkflowId = pathname.match(/\/workflows\/([^/]+)/)?.[1];
+  const activeWorkflow = workflows.find((workflow) => workflow.id === activeWorkflowId);
+  const inReasoning = pathname.startsWith('/workflows') || pathname === '/new-chat';
 
-  const isActive = (href: string) =>
-    href === '/workspace' ? pathname === href : pathname.startsWith(href);
+  useEffect(() => {
+    void api.listWorkflows().then(setWorkflows).catch(() => setWorkflows([]));
+  }, [api]);
 
   return (
-    <div className="app-frame">
-      <a className="skip-link" href="#main-content">
-        Skip to main content
-      </a>
-      <aside
-        className={`sidebar ${mobileOpen ? 'sidebar-open' : ''}`}
-        aria-label="Primary navigation"
-      >
-        <div className="brand-row">
-          <Link className="brand" href="/workspace" onClick={() => setMobileOpen(false)}>
-            <span className="brand-mark">
-              <Icon name="layers" size={18} />
-            </span>
-            <span>
-              vision <b>codef</b>
-            </span>
+    <div className="app-frame reasoning-app-frame">
+      <a className="skip-link" href="#main-content">Skip to main content</a>
+      <aside className={`sidebar reasoning-sidebar ${mobileOpen ? 'sidebar-open' : ''}`} aria-label="Primary navigation">
+        <div className="reasoning-brand-row">
+          <Link className="reasoning-brand" href="/workspace" onClick={() => setMobileOpen(false)}>
+            <span className="buildables-mark" aria-hidden="true"><i /><i /><i /></span>
+            <strong>buildables.</strong>
           </Link>
-          <button
-            className="icon-button mobile-close"
-            aria-label="Close navigation"
-            onClick={() => setMobileOpen(false)}
-          >
-            <Icon name="x" />
+          <button className="icon-button sidebar-collapse" aria-label="Collapse navigation" onClick={() => setMobileOpen(false)}>
+            <Icon name="chevron-right" size={16} />
           </button>
         </div>
-        <div className="company-switcher">
-          <span className="company-avatar">N</span>
-          <span>
-            <b>Northstar Works</b>
-            <small>Demo company</small>
-          </span>
-          <Icon className="muted-icon" name="chevron-down" size={15} />
+
+        <button className="reasoning-company-switcher" type="button">
+          <span className="company-avatar">B</span>
+          <strong>Buildables HQ</strong>
+          <Icon name="chevron-down" size={14} />
+        </button>
+
+        <div className="reasoning-mode-switch" aria-label="Workspace mode">
+          <Link className={!inReasoning ? 'active' : ''} href="/workspace">Workflow</Link>
+          <Link className={inReasoning ? 'active' : ''} href="/workflows">Reasoning</Link>
         </div>
-        <nav className="sidebar-nav">
-          <span className="nav-label">Workspace</span>
-          {primaryNav.map((item) => (
+
+        <nav className="reasoning-nav">
+          <span className="reasoning-nav-label">Workspace</span>
+          {workspaceNav.map((item) => (
             <Link
-              key={item.href}
-              className={`nav-link ${isActive(item.href) ? 'nav-link-active' : ''}`}
+              key={item.label}
+              className={`reasoning-nav-link${item.primary ? ' reasoning-nav-primary' : ''}${pathname === item.href ? ' active' : ''}`}
               href={item.href}
               onClick={() => setMobileOpen(false)}
             >
-              <Icon name={item.icon} size={17} />
-              <span>{item.label}</span>
-              {item.label === 'New Chat' && <span className="nav-kbd">⌘ K</span>}
-            </Link>
-          ))}
-          <span className="nav-label nav-label-spaced">Resources</span>
-          {resourceNav.map((item) => (
-            <Link
-              key={item.href}
-              className={`nav-link ${isActive(item.href) ? 'nav-link-active' : ''}`}
-              href={item.href}
-              onClick={() => setMobileOpen(false)}
-            >
-              <Icon name={item.icon} size={17} />
+              <Icon name={item.icon} size={15} />
               <span>{item.label}</span>
             </Link>
           ))}
         </nav>
-        <div className="sidebar-bottom">
-          <Divider />
-          <Link className="nav-link" href="/help">
-            <Icon name="help" size={17} />
-            <span>Help center</span>
-          </Link>
-          <Link className="nav-link" href="/settings">
-            <Icon name="settings" size={17} />
-            <span>Settings</span>
-          </Link>
-          <button
-            className="account-trigger"
-            aria-expanded={accountOpen}
-            aria-controls="account-menu"
-            onClick={() => setAccountOpen((open) => !open)}
-          >
-            <Avatar initials="AR" size="sm" />
-            <span>
-              <b>Alex Rivera</b>
-              <small>Operator</small>
-            </span>
-            <Icon className="muted-icon" name="chevron-down" size={15} />
-          </button>
-          {accountOpen && (
-            <div id="account-menu" className="account-menu" role="menu">
-              <Link href="/account" role="menuitem" onClick={() => setAccountOpen(false)}>
-                <Icon name="user" size={15} /> Account
+
+        {activeWorkflow && pathname.includes('/deploy') ? (
+          <section className="reasoning-task-section">
+            <div className="reasoning-section-heading"><span>Live apply</span><b>1</b></div>
+            <Link className="reasoning-live-task" href={`/workflows/${activeWorkflow.id}/deploy`}>
+              <i />
+              <span><strong>{activeWorkflow.title}</strong><small>Applying now</small></span>
+              <Icon name="more" size={14} />
+            </Link>
+          </section>
+        ) : null}
+
+        <section className="reasoning-task-section reasoning-task-list">
+          <div className="reasoning-section-heading"><span>Reasoning tasks</span></div>
+          {workflows.length ? workflows.map((workflow) => {
+            const active = workflow.id === activeWorkflowId;
+            const status = workflow.status === 'Published' ? 'Approved' : workflow.status === 'Needs Review' ? 'Review requested' : 'Review';
+            return (
+              <Link
+                key={workflow.id}
+                className={`reasoning-task-row${active ? ' active' : ''}`}
+                href={`/workflows/${workflow.id}/approve`}
+                onClick={() => setMobileOpen(false)}
+              >
+                <i />
+                <span><strong>{workflow.title}</strong><small>{status}</small></span>
               </Link>
-              <Link href="/settings" role="menuitem" onClick={() => setAccountOpen(false)}>
-                <Icon name="settings" size={15} /> Settings
-              </Link>
-              <Divider />
-              <button role="menuitem">
-                <Icon name="lock" size={15} /> Sign out <Badge tone="neutral">Soon</Badge>
-              </button>
-            </div>
-          )}
+            );
+          }) : <p className="reasoning-empty-tasks">No reasoning tasks yet.</p>}
+        </section>
+
+        <div className="reasoning-sidebar-footer">
+          <Link href="/help"><Icon name="help" size={15} /> Help</Link>
+          <Link href="/settings"><Icon name="settings" size={15} /> Settings</Link>
         </div>
       </aside>
-      {mobileOpen && (
-        <button
-          className="sidebar-scrim"
-          aria-label="Close navigation"
-          onClick={() => setMobileOpen(false)}
-        />
-      )}
-      <div className="content-frame">
-        <header className="topbar">
-          <button
-            className="icon-button mobile-menu"
-            aria-label="Open navigation"
-            onClick={() => setMobileOpen(true)}
-          >
-            <Icon name="menu" />
-          </button>
-          <div className="breadcrumbs">
-            <span>Northstar Works</span>
-            <Icon name="chevron-right" size={14} />
-            <strong>
-              {pathname.startsWith('/workflows')
-                ? 'Golden Run'
-                : pathname === '/new-chat'
-                  ? 'New Chat'
-                  : pathname === '/account'
-                    ? 'Account'
-                    : 'Overview'}
-            </strong>
-          </div>
-          <div className="topbar-actions">
-            <span className="connection-dot">
-              <i /> Connected
-            </span>
-            <button className="icon-button" aria-label="Open help">
-              <Icon name="help" size={18} />
-            </button>
-            <div className="top-avatar">
-              <Avatar initials="AR" size="sm" />
-            </div>
-          </div>
+
+      {mobileOpen ? <button className="sidebar-scrim" aria-label="Close navigation" onClick={() => setMobileOpen(false)} /> : null}
+
+      <div className="content-frame reasoning-content-frame">
+        <header className="reasoning-mobilebar">
+          <button className="icon-button" aria-label="Open navigation" onClick={() => setMobileOpen(true)}><Icon name="menu" /></button>
+          <span className="buildables-mark" aria-hidden="true"><i /><i /><i /></span>
+          <strong>{activeWorkflow?.title ?? 'Buildables Reasoning'}</strong>
         </header>
-        <main id="main-content" className="main-content">
-          {children}
-        </main>
+        <main id="main-content" className="main-content reasoning-main-content">{children}</main>
       </div>
     </div>
   );

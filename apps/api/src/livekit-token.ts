@@ -1,6 +1,10 @@
 import { AccessToken } from 'livekit-server-sdk';
 
-export type LiveKitTokenRole = 'publisher' | 'viewer';
+/**
+ * The phone sends capture media and receives a trusted guidance audio track.
+ * The guidance role is for a realtime procedure service, not an end user.
+ */
+export type LiveKitTokenRole = 'publisher' | 'viewer' | 'guidance';
 
 export type LiveKitTokenInput = {
   companyId: string;
@@ -27,7 +31,12 @@ export async function issueLiveKitToken(input: LiveKitTokenInput): Promise<{
   const identity = `vision-codef:${input.role}:${input.companyId}:${input.memberId}:${input.sessionId}`;
   const token = new AccessToken(apiKey, apiSecret, {
     identity,
-    name: input.role === 'publisher' ? 'Vision Codef phone' : 'Vision Codef desktop monitor',
+    name:
+      input.role === 'publisher'
+        ? 'Vision Codef phone'
+        : input.role === 'guidance'
+          ? 'Vision Codef guidance service'
+          : 'Vision Codef desktop monitor',
     ttl: '15m',
     attributes: {
       companyId: input.companyId,
@@ -39,9 +48,11 @@ export async function issueLiveKitToken(input: LiveKitTokenInput): Promise<{
   token.addGrant({
     room: roomName,
     roomJoin: true,
-    canPublish: input.role === 'publisher',
-    canSubscribe: input.role === 'viewer',
-    canPublishData: input.role === 'publisher',
+    canPublish: input.role === 'publisher' || input.role === 'guidance',
+    // The phone subscribes selectively in the client, only to `guidance`
+    // audio, so the desktop monitor cannot accidentally be played on-device.
+    canSubscribe: true,
+    canPublishData: input.role === 'publisher' || input.role === 'guidance',
   });
 
   return { token: await token.toJwt(), roomName, serverUrl, expiresInSeconds: 900 };

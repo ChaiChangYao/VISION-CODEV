@@ -155,7 +155,14 @@ $$;
 DO $$
 DECLARE table_name text;
 BEGIN
-  FOREACH table_name IN ARRAY ARRAY['companies', 'members', 'workflows', 'capture_sessions', 'media_assets', 'observations', 'procedure_graphs', 'deployments', 'audit_events'] LOOP
+  ALTER TABLE companies ENABLE ROW LEVEL SECURITY;
+  ALTER TABLE companies FORCE ROW LEVEL SECURITY;
+  DROP POLICY IF EXISTS tenant_isolation ON companies;
+  CREATE POLICY tenant_isolation ON companies
+    USING (id = app_company_id())
+    WITH CHECK (id = app_company_id());
+
+  FOREACH table_name IN ARRAY ARRAY['members', 'workflows', 'capture_sessions', 'media_assets', 'observations', 'procedure_graphs', 'deployments', 'audit_events'] LOOP
     EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', table_name);
     EXECUTE format('ALTER TABLE %I FORCE ROW LEVEL SECURITY', table_name);
     EXECUTE format('DROP POLICY IF EXISTS tenant_isolation ON %I', table_name);

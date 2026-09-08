@@ -2,9 +2,10 @@
 
 import { ConnectedGoldenRun } from '../../../../components/connected-golden-run';
 import { WorkflowHeader } from '../../../../components/workflow-navigation';
+import { use } from 'react';
 
-export default async function ApprovePage({ params }: { params: Promise<{ workflowId: string }> }) {
-  const { workflowId } = await params;
-  return <div><WorkflowHeader stage="approve" /><ConnectedGoldenRun workflowId={workflowId} stage="approve" /></div>;
+export default function ApprovePage({ params }: { params: Promise<{ workflowId: string }> }) {
+  const { workflowId } = use(params);
+  return <div><WorkflowHeader workflowId={workflowId} stage="approve" /><ConnectedGoldenRun workflowId={workflowId} stage="approve" /></div>;
 }
 

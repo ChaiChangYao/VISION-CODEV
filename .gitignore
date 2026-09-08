@@ -9,6 +9,8 @@ coverage/
 .env.*
 !.env.example
 *.log
+.vision-codef/
+.run/
 __pycache__/
 .venv/
 .expo/
@@ -23,4 +25,5 @@ apps/mobile/ios/
 .worktrees/
 procedure-vertical/
 web-api-worktree/
+services/streamformer-detector/vendor/
 

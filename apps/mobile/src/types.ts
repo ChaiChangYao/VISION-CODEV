@@ -41,6 +41,7 @@ export type CaptureSnapshot = {
   facingMode: FacingMode;
   orientation: DeviceOrientation;
   audioRoute: 'unknown' | 'bluetooth' | 'wired' | 'phone' | 'unavailable';
+  guidanceAudioActive: boolean;
   egressHealthy: boolean;
   recoveryPending: number;
   error?: string;

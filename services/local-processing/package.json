@@ -1,0 +1,26 @@
+{
+  "name": "@vision-codef/local-processing",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --conditions=development --import=tsx/esm --watch src/server.ts",
+    "start": "node dist/server.js",
+    "build": "tsc --build --force",
+    "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.883.0",
+    "@vision-codef/contracts": "workspace:*",
+    "dotenv": "^17.2.2",
+    "ffmpeg-static": "^5.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.0",
+    "tsx": "^4.20.3",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  }
+}

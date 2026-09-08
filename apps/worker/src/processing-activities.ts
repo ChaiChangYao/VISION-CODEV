@@ -1,4 +1,5 @@
 import { MediaObjectReferenceSchema, ProcessingCompletionSchema, ProcedureGraphSchema, type MediaObjectReference, type ProcessingCompletion, type ProcessingMetadata, type ProcedureGraph } from '@vision-codef/contracts';
+import type { ProcessingProgress } from './processing-progress-sink.js';
 
 export class InvalidMediaReferenceError extends Error {}
 
@@ -19,6 +20,7 @@ export type ProcessingActivityHandlers = {
   extractObservations(input: ProcessingActivityContext & { finalized: ProcessingArtifact; transcript: ProcessingArtifact }): Promise<ProcessingArtifact>;
   induceProcedure(input: ProcessingActivityContext & { finalized: ProcessingArtifact; transcript: ProcessingArtifact; observations: ProcessingArtifact }): Promise<ProcessingArtifact>;
   persistProcessingCompletion?(input: ProcessingCompletion): Promise<void>;
+  reportProcessingProgress?(input: ProcessingProgress): Promise<void>;
 };
 
 export type ProcessingActivities = {
@@ -27,6 +29,7 @@ export type ProcessingActivities = {
   extractObservations(input: ProcessingActivityContext & { finalized: ProcessingArtifact; transcript: ProcessingArtifact }): Promise<ProcessingArtifact>;
   induceProcedure(input: ProcessingActivityContext & { finalized: ProcessingArtifact; transcript: ProcessingArtifact; observations: ProcessingArtifact }): Promise<ProcessingArtifact>;
   persistProcessingCompletion(input: ProcessingCompletion): Promise<void>;
+  reportProcessingProgress(input: ProcessingProgress): Promise<void>;
 };
 
 function validateArtifact(value: ProcessingArtifact, expectedCompanyId: string): ProcessingArtifact {
@@ -47,6 +50,9 @@ export function createProcessingActivities(handlers: ProcessingActivityHandlers)
       const completion = ProcessingCompletionSchema.parse(input);
       if (!handlers.persistProcessingCompletion) throw new Error('CompletionSinkUnavailableError');
       await handlers.persistProcessingCompletion(completion);
+    },
+    async reportProcessingProgress(input) {
+      if (handlers.reportProcessingProgress) await handlers.reportProcessingProgress(input);
     },
   };
 }

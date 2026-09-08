@@ -1,18 +1,31 @@
 import { createPool, withTenantContext } from '@vision-codef/database';
-import type { TenantContext, EventEnvelope } from '@vision-codef/contracts';
+import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { dirname, resolve } from 'node:path';
+import type { TenantContext, EventEnvelope, ProcedureAnnotation, WorkflowReferencePack } from '@vision-codef/contracts';
 import type { CaptureSession, DeploymentRun, DevelopmentStore, MediaAsset, Workflow } from './store.js';
 
 type RuntimeEntity = {
   companyId: string;
   id: string;
-  entityType: 'workflow' | 'capture' | 'media_asset' | 'deployment' | 'event';
-  payload: Workflow | CaptureSession | MediaAsset | DeploymentRun | EventEnvelope;
+  entityType: 'workflow' | 'capture' | 'media_asset' | 'deployment' | 'annotation' | 'reference_pack' | 'event';
+  payload: Workflow | CaptureSession | MediaAsset | DeploymentRun | ProcedureAnnotation | WorkflowReferencePack | EventEnvelope;
 };
 
 export type RuntimePersistence = {
   load(store: DevelopmentStore): Promise<void>;
   save(store: DevelopmentStore): Promise<void>;
   close(): Promise<void>;
+};
+
+type FileSnapshot = {
+  version: 1;
+  workflows: Workflow[];
+  captures: CaptureSession[];
+  mediaAssets: MediaAsset[];
+  deployments: DeploymentRun[];
+  annotations: ProcedureAnnotation[];
+  referencePacks: WorkflowReferencePack[];
+  events: EventEnvelope[];
 };
 
 function configuredTenants(env: NodeJS.ProcessEnv = process.env): TenantContext[] {
@@ -33,6 +46,8 @@ function entitiesFor(store: DevelopmentStore, tenant: TenantContext): RuntimeEnt
   for (const capture of store.captures.values()) if (capture.companyId === tenant.companyId) entities.push({ companyId: tenant.companyId, id: capture.id, entityType: 'capture', payload: capture });
   for (const asset of store.mediaAssets.values()) if (asset.companyId === tenant.companyId) entities.push({ companyId: tenant.companyId, id: asset.id, entityType: 'media_asset', payload: asset });
   for (const deployment of store.deployments.values()) if (deployment.companyId === tenant.companyId) entities.push({ companyId: tenant.companyId, id: deployment.id, entityType: 'deployment', payload: deployment });
+  for (const annotation of store.annotations.values()) if (annotation.companyId === tenant.companyId) entities.push({ companyId: tenant.companyId, id: annotation.id, entityType: 'annotation', payload: annotation });
+  for (const pack of store.referencePacks.values()) if (pack.companyId === tenant.companyId) entities.push({ companyId: tenant.companyId, id: pack.id, entityType: 'reference_pack', payload: pack });
   for (const event of store.events) if (event.companyId === tenant.companyId) entities.push({ companyId: tenant.companyId, id: event.eventId, entityType: 'event', payload: event });
   return entities;
 }
@@ -42,6 +57,8 @@ function restore(store: DevelopmentStore, entityType: RuntimeEntity['entityType'
   else if (entityType === 'capture') store.captures.set((payload as CaptureSession).id, payload as CaptureSession);
   else if (entityType === 'media_asset') store.mediaAssets.set((payload as MediaAsset).id, payload as MediaAsset);
   else if (entityType === 'deployment') store.deployments.set((payload as DeploymentRun).id, payload as DeploymentRun);
+  else if (entityType === 'annotation') store.annotations.set((payload as ProcedureAnnotation).id, payload as ProcedureAnnotation);
+  else if (entityType === 'reference_pack') store.referencePacks.set((payload as WorkflowReferencePack).id, payload as WorkflowReferencePack);
   else store.events.push(payload as EventEnvelope);
 }
 
@@ -81,7 +98,39 @@ export function createPostgresRuntimePersistence(env: NodeJS.ProcessEnv = proces
   };
 }
 
+export function createFileRuntimePersistence(env: NodeJS.ProcessEnv = process.env): RuntimePersistence {
+  const path = resolve(env.VISION_CODEF_RUNTIME_STATE_PATH?.trim() || resolve(process.cwd(), '.vision-codef', 'runtime-state.json'));
+  let pendingWrite = Promise.resolve();
+  return {
+    async load(store) {
+      let snapshot: FileSnapshot;
+      try { snapshot = JSON.parse(await readFile(path, 'utf8')) as FileSnapshot; }
+      catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return; throw error; }
+      for (const value of snapshot.workflows ?? []) store.workflows.set(value.id, value);
+      for (const value of snapshot.captures ?? []) store.captures.set(value.id, value);
+      for (const value of snapshot.mediaAssets ?? []) store.mediaAssets.set(value.id, value);
+      for (const value of snapshot.deployments ?? []) store.deployments.set(value.id, value);
+      for (const value of snapshot.annotations ?? []) store.annotations.set(value.id, value);
+      for (const value of snapshot.referencePacks ?? []) store.referencePacks.set(value.id, value);
+      store.events.push(...(snapshot.events ?? []));
+    },
+    async save(store) {
+      const snapshot: FileSnapshot = { version: 1, workflows: [...store.workflows.values()], captures: [...store.captures.values()], mediaAssets: [...store.mediaAssets.values()], deployments: [...store.deployments.values()], annotations: [...store.annotations.values()], referencePacks: [...store.referencePacks.values()], events: store.events };
+      pendingWrite = pendingWrite.then(async () => {
+        await mkdir(dirname(path), { recursive: true });
+        const temporaryPath = `${path}.tmp`;
+        await writeFile(temporaryPath, JSON.stringify(snapshot), 'utf8');
+        await rename(temporaryPath, path);
+      });
+      await pendingWrite;
+    },
+    async close() { await pendingWrite; },
+  };
+}
+
 export function createConfiguredRuntimePersistence(env: NodeJS.ProcessEnv = process.env): RuntimePersistence | undefined {
-  if ((env.VISION_CODEF_PERSISTENCE ?? 'memory') !== 'postgres') return undefined;
-  return createPostgresRuntimePersistence(env);
+  const mode = env.VISION_CODEF_PERSISTENCE ?? (env.NODE_ENV === 'production' ? 'memory' : 'file');
+  if (mode === 'postgres') return createPostgresRuntimePersistence(env);
+  if (mode === 'file') return createFileRuntimePersistence(env);
+  return undefined;
 }

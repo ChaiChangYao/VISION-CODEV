@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, SafeAreaView, StyleSheet, Text, TextInput, View } from 'react-native';
 import Constants from 'expo-constants';
 
+import { createSherpaGuidanceSpeaker } from '../audio/sherpaGuidanceSpeaker';
 import { OrientationSafeCaptureView } from '../components/OrientationSafeCaptureView';
 import { PhoneCaptureSession } from '../media/phoneCaptureSession';
 import type { CaptureSnapshot } from '../types';
@@ -13,6 +14,7 @@ const initialSnapshot: CaptureSnapshot = {
   facingMode: 'rear',
   orientation: 'portrait',
   audioRoute: 'unknown',
+  guidanceAudioActive: false,
   egressHealthy: true,
   recoveryPending: 0,
 };
@@ -22,54 +24,113 @@ export function PhoneCaptureScreen() {
   const [message, setMessage] = useState<string | undefined>();
   const [pairingCode, setPairingCode] = useState(process.env.EXPO_PUBLIC_PAIRING_CODE ?? '');
   const pairingCodeRef = useRef(pairingCode);
+  const pairedRef = useRef<PairedCapture | undefined>(undefined);
+  const synchronizingRef = useRef(false);
+  const [remoteState, setRemoteState] = useState<CaptureState>();
   const pairingRequired = !process.env.EXPO_PUBLIC_SESSION_ID;
   useEffect(() => {
     pairingCodeRef.current = pairingCode;
   }, [pairingCode]);
-  const session = useMemo(() => {
+  const config = useMemo(() => {
     const extra = Constants.expoConfig?.extra as Record<string, unknown> | undefined;
     const serverUrl = stringValue(extra?.livekitServerUrl) ?? process.env.EXPO_PUBLIC_LIVEKIT_URL;
     const tokenEndpoint =
       stringValue(extra?.captureTokenEndpoint) ?? process.env.EXPO_PUBLIC_CAPTURE_TOKEN_ENDPOINT;
-    if (!serverUrl || !tokenEndpoint) return undefined;
-
-    let paired: { sessionId: string; workflowId: string; deviceId: string } | undefined;
     const pairingEndpoint = process.env.EXPO_PUBLIC_CAPTURE_PAIRING_ENDPOINT ?? '';
     const deviceId = process.env.EXPO_PUBLIC_DEVICE_ID ?? 'vision-codef-phone';
+    const ttsModelPath = stringValue(extra?.ttsModelPath) ?? process.env.EXPO_PUBLIC_TTS_MODEL_PATH;
+    if (!serverUrl || !tokenEndpoint) return undefined;
+    return { serverUrl, tokenEndpoint, pairingEndpoint, deviceId, ttsModelPath };
+  }, []);
+
+  const ensurePaired = useCallback(async (): Promise<PairedCapture> => {
+    if (pairedRef.current) return pairedRef.current;
+    if (!config?.pairingEndpoint)
+      throw new Error('EXPO_PUBLIC_CAPTURE_PAIRING_ENDPOINT is required when pairing a capture session.');
+    const currentPairingCode = pairingCodeRef.current.trim();
+    if (!/^\d{6}$/.test(currentPairingCode))
+      throw new Error('Enter the six-digit pairing code shown on the desktop.');
+    const paired = await requestPairing(config.pairingEndpoint, {
+      companyId: process.env.EXPO_PUBLIC_COMPANY_ID ?? '',
+      memberId: process.env.EXPO_PUBLIC_MEMBER_ID ?? '',
+      pairingCode: currentPairingCode,
+      deviceId: config.deviceId,
+    });
+    pairedRef.current = paired;
+    setRemoteState('preparing');
+    setMessage('Phone paired. Start recording from either the phone or desktop.');
+    return paired;
+  }, [config]);
+
+  const session = useMemo(() => {
+    if (!config) return undefined;
+    const guidance = config.ttsModelPath
+      ? createSherpaGuidanceSpeaker({ modelDirectory: config.ttsModelPath })
+      : undefined;
     let captureSession: PhoneCaptureSession;
     captureSession = new PhoneCaptureSession({
-      serverUrl,
+      serverUrl: config.serverUrl,
       sessionId: process.env.EXPO_PUBLIC_SESSION_ID ?? '',
       getToken: async () => {
-        const currentPairingCode = pairingCodeRef.current.trim();
-        if (!paired && currentPairingCode) {
-          if (!pairingEndpoint)
-            throw new Error(
-              'EXPO_PUBLIC_CAPTURE_PAIRING_ENDPOINT is required when pairing a capture session.',
-            );
-          paired = await requestPairing(pairingEndpoint, {
-            companyId: process.env.EXPO_PUBLIC_COMPANY_ID ?? '',
-            memberId: process.env.EXPO_PUBLIC_MEMBER_ID ?? '',
-            pairingCode: currentPairingCode,
-            deviceId,
-          });
-          captureSession.setSessionIdentity(paired.sessionId);
-        }
+        const paired = pairedRef.current ?? (pairingRequired ? await ensurePaired() : undefined);
+        if (paired) captureSession.setSessionIdentity(paired.sessionId);
         if (!paired && pairingRequired)
           throw new Error(
             'Enter the six-digit pairing code shown on the desktop before starting capture.',
           );
-        return requestLiveKitToken(tokenEndpoint, {
+        return requestLiveKitToken(config.tokenEndpoint, {
           companyId: process.env.EXPO_PUBLIC_COMPANY_ID ?? '',
           memberId: process.env.EXPO_PUBLIC_MEMBER_ID ?? '',
           workflowId: paired?.workflowId ?? process.env.EXPO_PUBLIC_WORKFLOW_ID ?? '',
           sessionId: paired?.sessionId ?? process.env.EXPO_PUBLIC_SESSION_ID ?? '',
-          deviceId: paired?.deviceId ?? deviceId,
+          deviceId: paired?.deviceId ?? config.deviceId,
         });
       },
-    });
+    }, undefined, guidance);
     return captureSession;
   }, []);
+
+  const synchronizeWithServer = useCallback(async () => {
+    if (!session || !config || !pairedRef.current || synchronizingRef.current) return;
+    synchronizingRef.current = true;
+    try {
+      const serverCapture = await requestCaptureState(config.tokenEndpoint, pairedRef.current.sessionId);
+      setRemoteState(serverCapture.state);
+      const local = session.snapshot().state;
+      if (serverCapture.state === 'preparing' && local !== 'active' && local !== 'paused' && local !== 'preparing') {
+        setMessage('Phone paired. Connecting the camera so recording can start from either device…');
+        await session.start();
+        setMessage('Phone ready. Start recording from either the phone or desktop.');
+      } else if (serverCapture.state === 'active' && local !== 'active' && local !== 'paused' && local !== 'preparing') {
+        setMessage('Desktop started recording. Connecting the phone camera…');
+        await session.start();
+      } else if (
+        (serverCapture.state === 'finalizing' || serverCapture.state === 'processing' || serverCapture.state === 'completed') &&
+        (local === 'active' || local === 'paused')
+      ) {
+        await session.stop();
+        setMessage('Recording stopped. The desktop is processing the canonical recording.');
+      }
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      synchronizingRef.current = false;
+    }
+  }, [config, session]);
+
+  useEffect(() => {
+    if (!pairingRequired || pairingCode.length !== 6 || pairedRef.current) return;
+    void ensurePaired().catch((error: unknown) =>
+      setMessage(error instanceof Error ? error.message : String(error)),
+    );
+  }, [ensurePaired, pairingCode, pairingRequired]);
+
+  useEffect(() => {
+    if (!pairedRef.current) return;
+    void synchronizeWithServer();
+    const timer = setInterval(() => void synchronizeWithServer(), 1500);
+    return () => clearInterval(timer);
+  }, [remoteState, synchronizeWithServer]);
 
   useEffect(() => {
     if (!session) {
@@ -84,20 +145,37 @@ export function PhoneCaptureScreen() {
   useEffect(() => () => session?.dispose(), [session]);
 
   const start = async () => {
-    if (!session) return;
+    if (!session || !config) return;
     setMessage(undefined);
     try {
-      await session.start();
+      const paired = pairingRequired ? await ensurePaired() : undefined;
+      if (paired) {
+        await requestCaptureAction(config.tokenEndpoint, paired.sessionId, 'start');
+        setRemoteState('active');
+      }
+      if (session.snapshot().state !== 'active' && session.snapshot().state !== 'paused') {
+        await session.start();
+      }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
     }
   };
 
   const stop = async () => {
-    if (!session) return;
-    await session.stop();
-    setMessage('Capture finalized. LiveKit Egress remains the canonical recording.');
+    if (!session || !config) return;
+    try {
+      if (pairedRef.current) {
+        const stopped = await requestCaptureAction(config.tokenEndpoint, pairedRef.current.sessionId, 'stop');
+        setRemoteState(stopped.state);
+      }
+      await session.stop();
+      setMessage('Recording stopped. The desktop is processing the canonical recording.');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    }
   };
+
+  const effectiveState = remoteState ?? snapshot.state;
 
   return (
     <OrientationSafeCaptureView>
@@ -114,7 +192,7 @@ export function PhoneCaptureScreen() {
 
         <View style={styles.preview}>
           <Text style={styles.previewLabel}>
-            {snapshot.state === 'active' ? 'CAPTURING' : 'READY'}
+            {effectiveState === 'active' ? 'CAPTURING' : effectiveState === 'preparing' ? 'READY' : effectiveState.toUpperCase()}
           </Text>
           <Text style={styles.previewTitle}>
             {snapshot.facingMode === 'rear' ? 'Rear' : 'Front'} camera - {snapshot.orientation} -{' '}
@@ -131,9 +209,7 @@ export function PhoneCaptureScreen() {
             value={pairingCode}
             onChangeText={(value) => setPairingCode(value.replace(/\D/g, '').slice(0, 6))}
             editable={
-              snapshot.state !== 'active' &&
-              snapshot.state !== 'paused' &&
-              snapshot.state !== 'preparing'
+              effectiveState !== 'active' && effectiveState !== 'paused' && effectiveState !== 'preparing'
             }
             keyboardType="number-pad"
             maxLength={6}
@@ -149,6 +225,7 @@ export function PhoneCaptureScreen() {
 
         <View style={styles.metaRow}>
           <Meta label="Audio" value={snapshot.audioRoute} />
+          <Meta label="Guidance" value={snapshot.guidanceAudioActive ? 'speaking' : 'ready'} />
           <Meta label="Egress" value={snapshot.egressHealthy ? 'healthy' : 'recovery watch'} />
           <Meta label="Recovery" value={`${snapshot.recoveryPending} pending`} />
         </View>
@@ -161,11 +238,11 @@ export function PhoneCaptureScreen() {
           <Pressable
             style={styles.secondaryButton}
             onPress={() => void session?.switchCamera()}
-            disabled={!session || snapshot.state !== 'active'}
+            disabled={!session || effectiveState !== 'active'}
           >
             <Text style={styles.secondaryButtonText}>Flip camera</Text>
           </Pressable>
-          {snapshot.state === 'active' || snapshot.state === 'paused' ? (
+          {effectiveState === 'active' || effectiveState === 'paused' ? (
             <Pressable style={styles.stopButton} onPress={() => void stop()}>
               <Text style={styles.stopButtonText}>Stop capture</Text>
             </Pressable>
@@ -176,6 +253,7 @@ export function PhoneCaptureScreen() {
               disabled={
                 !session ||
                 snapshot.state === 'preparing' ||
+                (remoteState !== undefined && remoteState !== 'preparing') ||
                 (pairingRequired && pairingCode.trim().length !== 6)
               }
             >
@@ -189,6 +267,9 @@ export function PhoneCaptureScreen() {
     </OrientationSafeCaptureView>
   );
 }
+
+type CaptureState = CaptureSnapshot['state'];
+type PairedCapture = { sessionId: string; workflowId: string; deviceId: string };
 
 function Meta({ label, value }: { label: string; value: string }) {
   return (
@@ -249,6 +330,42 @@ async function requestPairing(
   return data;
 }
 
+async function requestCaptureState(tokenEndpoint: string, sessionId: string): Promise<{ state: CaptureState }> {
+  return requestCaptureApi(tokenEndpoint, sessionId);
+}
+
+async function requestCaptureAction(
+  tokenEndpoint: string,
+  sessionId: string,
+  action: 'start' | 'stop',
+): Promise<{ state: CaptureState }> {
+  return requestCaptureApi(tokenEndpoint, sessionId, action);
+}
+
+async function requestCaptureApi(
+  tokenEndpoint: string,
+  sessionId: string,
+  action?: 'start' | 'stop',
+): Promise<{ state: CaptureState }> {
+  const endpoint = new URL(
+    `/v1/capture-sessions/${encodeURIComponent(sessionId)}${action ? `/${action}` : ''}`,
+    tokenEndpoint,
+  ).toString();
+  const response = await fetch(endpoint, {
+    method: action ? 'POST' : 'GET',
+    headers: {
+      'content-type': 'application/json',
+      'x-company-id': process.env.EXPO_PUBLIC_COMPANY_ID ?? '',
+      'x-member-id': process.env.EXPO_PUBLIC_MEMBER_ID ?? '',
+    },
+  });
+  const payload: unknown = await response.json();
+  if (!response.ok) throw new Error(`Capture ${action ?? 'status'} request failed (${response.status}).`);
+  const data = unwrapData(payload);
+  if (!isCaptureStateResponse(data)) throw new Error('Capture status response was invalid.');
+  return data;
+}
+
 function unwrapData(value: unknown): unknown {
   if (typeof value === 'object' && value !== null && 'data' in value)
     return (value as { data: unknown }).data;
@@ -274,6 +391,14 @@ function isPairingResponse(
     typeof (value as Record<string, unknown>).sessionId === 'string' &&
     typeof (value as Record<string, unknown>).workflowId === 'string' &&
     typeof (value as Record<string, unknown>).deviceId === 'string'
+  );
+}
+
+function isCaptureStateResponse(value: unknown): value is { state: CaptureState } {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as Record<string, unknown>).state === 'string'
   );
 }
 

@@ -10,3 +10,7 @@ keys:
   devkey: devsecret
 logging:
   level: info
+webhook:
+  api_key: devkey
+  urls:
+    - 'http://host.docker.internal:4000/v1/webhooks/livekit'

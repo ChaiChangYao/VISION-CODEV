@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc --build --force",
     "start": "node dist/temporal-worker.js",
     "dev": "node --conditions=development --import=tsx/esm --watch src/temporal-worker.ts",
     "typecheck": "tsc --noEmit",
@@ -12,6 +12,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@temporalio/activity": "1.23.0",
     "@temporalio/client": "1.23.0",
     "@temporalio/worker": "1.23.0",
     "@temporalio/workflow": "1.23.0",

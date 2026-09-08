@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { processingWorkflowId, startCaptureProcessing } from './processing-client.js';
+import { describeCaptureProcessing, getProcessingMetadata, processingWorkflowId, startCaptureProcessing } from './processing-client.js';
 
 describe('Temporal processing client boundary', () => {
   it('names workflow executions by immutable company and capture IDs', () => {
@@ -20,5 +20,17 @@ describe('Temporal processing client boundary', () => {
     })).resolves.toBeUndefined();
     if (previous === undefined) delete process.env.TEMPORAL_ADDRESS;
     else process.env.TEMPORAL_ADDRESS = previous;
+  });
+
+  it('does not claim reconciliation when Temporal is not configured', async () => {
+    const previous = process.env.TEMPORAL_ADDRESS;
+    delete process.env.TEMPORAL_ADDRESS;
+    await expect(describeCaptureProcessing('workflow-id')).resolves.toBeUndefined();
+    if (previous === undefined) delete process.env.TEMPORAL_ADDRESS;
+    else process.env.TEMPORAL_ADDRESS = previous;
+  });
+
+  it('pins metadata to the selected OpenAI provider model', () => {
+    expect(getProcessingMetadata({ VISION_CODEF_VLM_PROVIDER: 'openai', OPENAI_VISION_MODEL: 'gpt-5-mini', VISION_CODEF_PROMPT_VERSION: 'prompt-v1' } as NodeJS.ProcessEnv)).toMatchObject({ modelId: 'gpt-5-mini', modelVersion: 'gpt-5-mini', adapterVersion: 'openai-responses-v1' });
   });
 });

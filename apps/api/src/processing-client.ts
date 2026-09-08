@@ -13,12 +13,16 @@ export type CaptureProcessingRequest = {
 };
 
 export type ProcessingWorkflowHandle = { workflowId: string; runId: string };
+export type ProcessingExecutionStatus = 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED' | 'TERMINATED' | 'CONTINUED_AS_NEW' | 'TIMED_OUT' | 'UNKNOWN';
 
 export function getProcessingMetadata(env: NodeJS.ProcessEnv = process.env): ProcessingMetadata | undefined {
+  const provider = (env.VISION_CODEF_VLM_PROVIDER ?? 'ollama').trim().toLowerCase();
+  const openAi = provider === 'openai';
+  const selectedModel = openAi ? env.OPENAI_VISION_MODEL ?? 'gpt-5-mini' : env.VISION_CODEF_MODEL_ID;
   const result = ProcessingMetadataSchema.safeParse({
-    modelId: env.VISION_CODEF_MODEL_ID,
-    modelVersion: env.VISION_CODEF_MODEL_VERSION,
-    adapterVersion: env.VISION_CODEF_ADAPTER_VERSION,
+    modelId: selectedModel,
+    modelVersion: openAi ? env.OPENAI_VISION_MODEL_VERSION ?? selectedModel : env.VISION_CODEF_MODEL_VERSION,
+    adapterVersion: openAi ? env.VISION_CODEF_OPENAI_ADAPTER_VERSION ?? 'openai-responses-v1' : env.VISION_CODEF_ADAPTER_VERSION,
     promptVersion: env.VISION_CODEF_PROMPT_VERSION,
     decodingParameters: { temperature: Number(env.VISION_CODEF_DECODING_TEMPERATURE ?? 0) },
     inputMediaHashes: env.VISION_CODEF_INPUT_MEDIA_HASHES?.split(',').map((value) => value.trim()).filter(Boolean) ?? [],
@@ -48,6 +52,23 @@ export async function startCaptureProcessing(input: CaptureProcessingRequest): P
         : undefined,
     });
     return { workflowId: handle.workflowId, runId: handle.firstExecutionRunId };
+  } finally {
+    await connection.close();
+  }
+}
+
+export async function describeCaptureProcessing(workflowId: string): Promise<ProcessingExecutionStatus | undefined> {
+  const address = process.env.TEMPORAL_ADDRESS;
+  if (!address || !workflowId) return undefined;
+  const connection = await Connection.connect({ address });
+  try {
+    const client = new Client({ connection, namespace: process.env.TEMPORAL_NAMESPACE ?? 'default' });
+    const description = await client.workflow.getHandle(workflowId).describe();
+    return (description.status.name ?? 'UNKNOWN') as ProcessingExecutionStatus;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (/not found/i.test(message)) return undefined;
+    throw error;
   } finally {
     await connection.close();
   }

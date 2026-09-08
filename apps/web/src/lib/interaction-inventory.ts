@@ -38,7 +38,7 @@ export const interactionInventory: InteractionInventoryEntry[] = [
   {
     id: 'composer-submit',
     route: '/new-chat',
-    label: 'Create Golden Run',
+    label: 'Continue to capture setup',
     kind: 'form',
     automated: true,
   },
@@ -133,20 +133,6 @@ export const interactionInventory: InteractionInventoryEntry[] = [
     kind: 'button',
     automated: true,
     notes: 'Controlled development fixture; never physical acceptance evidence.',
-  },
-  {
-    id: 'intent-golden-run',
-    route: '/new-chat',
-    label: 'Golden Run intent',
-    kind: 'button',
-    automated: true,
-  },
-  {
-    id: 'intent-needs-clarification',
-    route: '/new-chat',
-    label: 'Needs clarification intent',
-    kind: 'button',
-    automated: true,
   },
   {
     id: 'approve-instruction',

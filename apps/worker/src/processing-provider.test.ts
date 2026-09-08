@@ -51,4 +51,12 @@ describe('HTTP processing provider boundary', () => {
   it('fails closed when no processing provider is configured', () => {
     expect(() => createConfiguredProcessingProviderHandlers({})).toThrow('VISION_CODEF_PROCESSING_PROVIDER_URL');
   });
+
+  it('heartbeats immediately while waiting on a provider request', async () => {
+    const heartbeat = vi.fn();
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({ data: { ...context.media, kind: 'media' } }), { status: 200 }));
+    const handlers = createHttpProcessingProviderHandlers({ baseUrl: 'https://processing.example.test', fetcher, heartbeat });
+    await handlers.finalizeCapture(context);
+    expect(heartbeat).toHaveBeenCalledWith({ endpoint: 'finalize', state: 'requesting' });
+  });
 });

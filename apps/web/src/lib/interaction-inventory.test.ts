@@ -31,8 +31,6 @@ describe('web interaction inventory', () => {
       'connected-deploy-recover',
       'connected-wrong-fold-fixture',
       'connected-deploy-why',
-      'intent-golden-run',
-      'intent-needs-clarification',
     ])
       expect(entries.has(id)).toBe(true);
     expect(entries.get('connected-wrong-fold-fixture')?.notes).toContain(

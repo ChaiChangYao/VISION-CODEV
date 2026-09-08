@@ -2,6 +2,9 @@ import {
   createLocalTracks,
   LocalAudioTrack,
   LocalVideoTrack,
+  type RemoteParticipant,
+  type RemoteTrack,
+  type RemoteTrackPublication,
   Room,
   RoomEvent,
   Track,
@@ -11,6 +14,11 @@ import {
 import type { FacingMode } from '../types';
 
 export type LiveKitTokenProvider = () => Promise<string>;
+export const GUIDANCE_DATA_TOPIC = 'vision-codef.guidance';
+
+export type GuidanceMessage =
+  | { type: 'speak'; text: string; priority?: 'normal' | 'urgent' }
+  | { type: 'interrupt' };
 
 export type LiveKitPhoneClientOptions = {
   serverUrl: string;
@@ -22,6 +30,9 @@ export type LiveKitPhoneClientOptions = {
   onReconnected?: () => void;
   onDisconnected?: (reason?: string) => void;
   onTrackPublished?: (kind: 'audio' | 'video') => void;
+  onGuidanceAudioChanged?: (active: boolean) => void;
+  onGuidanceMessage?: (message: GuidanceMessage) => void;
+  receiveGuidanceAudio?: boolean;
   onError?: (error: Error) => void;
 };
 
@@ -30,6 +41,7 @@ export class LiveKitPhoneClient {
   private room: Room | undefined;
   private localVideo: LocalVideoTrack | undefined;
   private localAudio: LocalAudioTrack | undefined;
+  private readonly guidanceAudioTracks = new Set<string>();
   private facingMode: FacingMode;
   private suppressDisconnectEvent = false;
 
@@ -58,8 +70,11 @@ export class LiveKitPhoneClient {
 
     try {
       await room.connect(this.options.serverUrl, await this.options.getToken(), {
+        // Guidance is explicitly selected by participant role below. This
+        // prevents the desktop monitor from being received on the phone.
         autoSubscribe: false,
       });
+      this.subscribeToAvailableGuidance(room);
       const tracks = await createLocalTracks({
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
         video: {
@@ -93,6 +108,8 @@ export class LiveKitPhoneClient {
     this.room = undefined;
     this.localVideo = undefined;
     this.localAudio = undefined;
+    this.guidanceAudioTracks.clear();
+    this.options.onGuidanceAudioChanged?.(false);
     room?.disconnect(true);
   }
 
@@ -128,13 +145,84 @@ export class LiveKitPhoneClient {
     room.on(RoomEvent.Reconnecting, () => this.options.onReconnecting?.());
     room.on(RoomEvent.Reconnected, () => this.options.onReconnected?.());
     room.on(RoomEvent.Disconnected, (reason) => {
+      this.guidanceAudioTracks.clear();
+      this.options.onGuidanceAudioChanged?.(false);
       if (this.suppressDisconnectEvent) {
         this.suppressDisconnectEvent = false;
         return;
       }
       this.options.onDisconnected?.(String(reason ?? 'unknown'));
     });
+    room.on(RoomEvent.TrackPublished, (publication, participant) => {
+      if (this.options.receiveGuidanceAudio !== false && isGuidanceAudioPublication(publication, participant)) {
+        publication.setSubscribed(true);
+      }
+    });
+    room.on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
+      if (!isGuidanceAudioTrack(track, publication, participant)) return;
+      this.guidanceAudioTracks.add(publication.trackSid);
+      this.options.onGuidanceAudioChanged?.(true);
+    });
+    room.on(RoomEvent.TrackUnsubscribed, (_track, publication, participant) => {
+      if (!isGuidanceParticipant(participant)) return;
+      this.guidanceAudioTracks.delete(publication.trackSid);
+      this.options.onGuidanceAudioChanged?.(this.guidanceAudioTracks.size > 0);
+    });
+    room.on(RoomEvent.DataReceived, (payload, participant, _kind, topic) => {
+      if (!participant || !isGuidanceParticipant(participant) || topic !== GUIDANCE_DATA_TOPIC) return;
+      const message = parseGuidanceMessage(payload);
+      if (message) this.options.onGuidanceMessage?.(message);
+    });
   }
+
+  private subscribeToAvailableGuidance(room: Room): void {
+    if (this.options.receiveGuidanceAudio === false) return;
+    for (const participant of room.remoteParticipants.values()) {
+      if (!isGuidanceParticipant(participant)) continue;
+      for (const publication of participant.trackPublications.values()) {
+        if (publication.kind === Track.Kind.Audio) publication.setSubscribed(true);
+      }
+    }
+  }
+}
+
+export function isGuidanceParticipant(participant: Pick<RemoteParticipant, 'attributes'>): boolean {
+  return participant.attributes.role === 'guidance';
+}
+
+export function isGuidanceAudioPublication(
+  publication: Pick<RemoteTrackPublication, 'kind'>,
+  participant: Pick<RemoteParticipant, 'attributes'>,
+): boolean {
+  return publication.kind === Track.Kind.Audio && isGuidanceParticipant(participant);
+}
+
+export function isGuidanceAudioTrack(
+  track: Pick<RemoteTrack, 'kind'>,
+  publication: Pick<RemoteTrackPublication, 'kind'>,
+  participant: Pick<RemoteParticipant, 'attributes'>,
+): boolean {
+  return track.kind === Track.Kind.Audio && isGuidanceAudioPublication(publication, participant);
+}
+
+export function parseGuidanceMessage(payload: Uint8Array): GuidanceMessage | undefined {
+  try {
+    const value: unknown = JSON.parse(new TextDecoder().decode(payload));
+    if (typeof value !== 'object' || value === null) return undefined;
+    const message = value as Record<string, unknown>;
+    if (message.type === 'interrupt') return { type: 'interrupt' };
+    if (
+      message.type === 'speak' &&
+      typeof message.text === 'string' &&
+      message.text.trim().length > 0 &&
+      (message.priority === undefined || message.priority === 'normal' || message.priority === 'urgent')
+    ) {
+      return { type: 'speak', text: message.text.trim(), ...(message.priority ? { priority: message.priority } : {}) };
+    }
+  } catch {
+    // Invalid packets are ignored; only the trusted guidance service can control speech.
+  }
+  return undefined;
 }
 
 function toError(error: unknown): Error {

@@ -81,7 +81,14 @@ export const CaptureStateSchema = z.enum([
 ]);
 export type CaptureState = z.infer<typeof CaptureStateSchema>;
 
-export const VoiceStateSchema = z.enum(['closed', 'listening', 'speaking', 'interrupted', 'muted', 'error']);
+export const VoiceStateSchema = z.enum([
+  'closed',
+  'listening',
+  'speaking',
+  'interrupted',
+  'muted',
+  'error',
+]);
 export type VoiceState = z.infer<typeof VoiceStateSchema>;
 
 export const VoiceEventSchema = z.discriminatedUnion('type', [
@@ -111,7 +118,10 @@ export type MediaAssetState = z.infer<typeof MediaAssetStateSchema>;
 export const MediaObjectReferenceSchema = z.object({
   companyId: CompanyIdSchema,
   objectKey: z.string().min(1),
-  sha256: z.string().regex(/^[a-f0-9]{64}$/i).optional(),
+  sha256: z
+    .string()
+    .regex(/^[a-f0-9]{64}$/i)
+    .optional(),
 });
 export type MediaObjectReference = z.infer<typeof MediaObjectReferenceSchema>;
 
@@ -122,7 +132,7 @@ export const ProcessingMetadataSchema = z.object({
   promptVersion: z.string().min(1),
   decodingParameters: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])),
   inputMediaHashes: z.array(z.string().min(1)),
-  retrievedEvidenceIds: z.array(IdSchema)
+  retrievedEvidenceIds: z.array(IdSchema),
 });
 export type ProcessingMetadata = z.infer<typeof ProcessingMetadataSchema>;
 
@@ -170,11 +180,139 @@ export const ProcessingCompletionSchema = z.object({
   transcript: MediaObjectReferenceSchema,
   observations: MediaObjectReferenceSchema,
   procedureDraft: MediaObjectReferenceSchema,
-  normalizedGraph: ProcedureGraphSchema.refine((graph) => !graph.published, 'Processing completion graphs must be unpublished drafts.'),
+  normalizedGraph: ProcedureGraphSchema.refine(
+    (graph) => !graph.published,
+    'Processing completion graphs must be unpublished drafts.',
+  ),
   metadata: ProcessingMetadataSchema,
   completedAt: TimestampSchema,
 });
 export type ProcessingCompletion = z.infer<typeof ProcessingCompletionSchema>;
+
+export const AnnotationVerdictSchema = z.enum(['correct', 'deviation', 'uncertain']);
+export type AnnotationVerdict = z.infer<typeof AnnotationVerdictSchema>;
+
+export const AnnotationSeveritySchema = z.enum(['info', 'minor', 'major', 'critical']);
+export type AnnotationSeverity = z.infer<typeof AnnotationSeveritySchema>;
+
+export const AnnotationReviewStatusSchema = z.enum(['proposed', 'approved', 'rejected']);
+export type AnnotationReviewStatus = z.infer<typeof AnnotationReviewStatusSchema>;
+
+export const DocumentEvidenceLocatorSchema = z.object({
+  sourceId: z.string().min(1),
+  page: z.number().int().positive().optional(),
+  region: z.string().min(1).optional(),
+  note: z.string().min(1).max(1000).optional(),
+});
+export type DocumentEvidenceLocator = z.infer<typeof DocumentEvidenceLocatorSchema>;
+
+export const ProcedureAnnotationInputSchema = z
+  .object({
+    stepId: IdSchema,
+    captureSessionId: IdSchema,
+    startMs: z.number().int().nonnegative(),
+    endMs: z.number().int().positive(),
+    verdict: AnnotationVerdictSchema,
+    severity: AnnotationSeveritySchema.optional(),
+    objectName: z.string().min(1),
+    observedAction: z.string().min(1),
+    expectedState: z.string().min(1),
+    failureType: z.string().min(1).optional(),
+    expectedNextAction: z.string().min(1),
+    reasoning: z.string().min(1),
+    confidence: z.number().min(0).max(1).optional(),
+    schemaVersion: z.literal(1).optional(),
+    documentEvidence: z.array(DocumentEvidenceLocatorSchema),
+    origin: z.enum(['model', 'senior']),
+    modelProposal: z
+      .object({
+        modelId: z.string().min(1),
+        modelVersion: z.string().min(1),
+        confidence: z.number().min(0).max(1),
+      })
+      .optional(),
+    reviewStatus: AnnotationReviewStatusSchema,
+  })
+  .superRefine((value, context) => {
+    if (value.endMs <= value.startMs) {
+      context.addIssue({
+        code: 'custom',
+        path: ['endMs'],
+        message: 'endMs must be greater than startMs.',
+      });
+    }
+    if (value.verdict === 'deviation' && !value.failureType) {
+      context.addIssue({
+        code: 'custom',
+        path: ['failureType'],
+        message: 'Deviation annotations require a failure type.',
+      });
+    }
+    if (value.origin === 'model' && !value.modelProposal) {
+      context.addIssue({
+        code: 'custom',
+        path: ['modelProposal'],
+        message: 'Model annotations require pinned proposal metadata.',
+      });
+    }
+  });
+export type ProcedureAnnotationInput = z.infer<typeof ProcedureAnnotationInputSchema>;
+
+export const ProcedureAnnotationSchema = ProcedureAnnotationInputSchema.safeExtend({
+  id: IdSchema,
+  companyId: CompanyIdSchema,
+  workflowId: IdSchema,
+  revision: z.number().int().positive(),
+  createdAt: TimestampSchema,
+  updatedAt: TimestampSchema,
+  reviewedByMemberId: IdSchema.optional(),
+  reviewedAt: TimestampSchema.optional(),
+});
+export type ProcedureAnnotation = z.infer<typeof ProcedureAnnotationSchema>;
+
+export const ReferencePackEntrySchema = z.object({
+  annotationId: IdSchema,
+  stepId: IdSchema,
+  verdict: AnnotationVerdictSchema,
+  severity: AnnotationSeveritySchema.optional(),
+  media: z.object({
+    captureSessionId: IdSchema,
+    startMs: z.number().int().nonnegative(),
+    endMs: z.number().int().positive(),
+  }),
+  comparisonText: z.string().min(1),
+  objectName: z.string().min(1),
+  observedAction: z.string().min(1),
+  expectedState: z.string().min(1),
+  failureType: z.string().min(1).optional(),
+  expectedNextAction: z.string().min(1),
+  reasoning: z.string().min(1),
+  confidence: z.number().min(0).max(1).optional(),
+  schemaVersion: z.literal(1).optional(),
+  documentEvidence: z.array(DocumentEvidenceLocatorSchema),
+});
+export type ReferencePackEntry = z.infer<typeof ReferencePackEntrySchema>;
+
+export const WorkflowReferencePackSchema = z.object({
+  id: IdSchema,
+  companyId: CompanyIdSchema,
+  workflowId: IdSchema,
+  version: z.number().int().positive(),
+  procedureVersion: z.number().int().positive(),
+  contentHash: z.string().regex(/^[a-f0-9]{64}$/i),
+  annotationIds: z.array(IdSchema).min(1),
+  entries: z.array(ReferencePackEntrySchema).min(1),
+  coverage: z.object({
+    correct: z.number().int().nonnegative(),
+    deviation: z.number().int().nonnegative(),
+    uncertain: z.number().int().nonnegative(),
+    stepIds: z.array(IdSchema),
+  }),
+  embeddingStatus: z.literal('not_generated'),
+  publishedAt: TimestampSchema,
+  publishedByMemberId: IdSchema,
+});
+export type WorkflowReferencePack = z.infer<typeof WorkflowReferencePackSchema>;
 
 export const EventEnvelopeSchema = z.object({
   eventId: IdSchema,
@@ -217,8 +355,30 @@ export interface CameraAdapter {
 export type DiscoveryInput = { companyId: string; siteId?: string };
 export type CameraConnectionConfig = { deviceId: string; source: string; secretRef?: string };
 export type DiscoveredDevice = { deviceId: string; name: string; source: string };
-export type ProbeResult = { usable: boolean; audio: boolean; codec?: string; width?: number; height?: number; fps?: number; reason?: string };
-export type CameraSession = { sessionId: string; sourceId: string; videoUrl?: string; audioAvailable: boolean; reconnecting: boolean };
-export type CameraCapabilities = { video: boolean; audio: boolean; ptz: boolean; metadata: boolean };
-export type DeviceHealth = { status: 'connected' | 'degraded' | 'disconnected'; lastSeen: string; frameAgeMs?: number };
-
+export type ProbeResult = {
+  usable: boolean;
+  audio: boolean;
+  codec?: string;
+  width?: number;
+  height?: number;
+  fps?: number;
+  reason?: string;
+};
+export type CameraSession = {
+  sessionId: string;
+  sourceId: string;
+  videoUrl?: string;
+  audioAvailable: boolean;
+  reconnecting: boolean;
+};
+export type CameraCapabilities = {
+  video: boolean;
+  audio: boolean;
+  ptz: boolean;
+  metadata: boolean;
+};
+export type DeviceHealth = {
+  status: 'connected' | 'degraded' | 'disconnected';
+  lastSeen: string;
+  frameAgeMs?: number;
+};

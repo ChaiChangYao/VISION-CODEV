@@ -22,6 +22,7 @@ export function createHttpProcessingCompletionSink(options: ProcessingCompletion
         'x-vision-codef-signature': signProcessingCompletion(body, options.secret),
       },
       body,
+      signal: AbortSignal.timeout(10_000),
     });
     if (!response.ok) throw new Error(`Processing completion callback failed (${response.status}).`);
   };

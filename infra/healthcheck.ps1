@@ -20,7 +20,7 @@ function describeServices($services) {
 
 do {
   try {
-    $services = @(docker compose -f infra/docker-compose.yml ps --format json | ConvertFrom-Json)
+    $services = @(docker compose -f infra/docker-compose.yml ps -a --format json | ConvertFrom-Json)
   } catch {
     $services = @()
   }

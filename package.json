@@ -1,6 +1,11 @@
 {
   "name": "vision-codef",
   "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "services/*"
+  ],
   "packageManager": "pnpm@10.14.0",
   "scripts": {
     "build": "turbo run build",
@@ -8,6 +13,8 @@
     "dev": "turbo run dev --parallel",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "golden-run:start": "powershell -ExecutionPolicy Bypass -File scripts/start-golden-run.ps1",
+    "golden-run:restart": "powershell -ExecutionPolicy Bypass -File scripts/start-golden-run.ps1 -Restart",
     "interaction:check": "node scripts/verify-interaction-inventory.mjs",
     "lint": "turbo run lint",
     "test": "turbo run test",

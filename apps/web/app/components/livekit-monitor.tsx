@@ -49,7 +49,7 @@ export function LiveKitMonitor({ serverUrl, viewerToken }: { serverUrl: string; 
       for (const track of attached) track.detach();
       videoRef.current?.replaceChildren();
       audioRef.current?.replaceChildren();
-      void room.disconnect();
+      void room.disconnect().catch(() => undefined);
     };
   }, [serverUrl, viewerToken]);
 

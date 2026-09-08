@@ -1,60 +1,49 @@
+'use client';
+
 import Link from 'next/link';
-import { Badge, Icon } from '@vision-codef/ui';
-import { workflow, type LifecycleStage } from '../../src/lib/demo-data';
+import { useEffect, useMemo, useState } from 'react';
+import { Icon } from '@vision-codef/ui';
+import { type LifecycleStage } from '../../src/lib/demo-data';
+import { getApiClient, type WorkflowSummary } from '../../src/lib/api-client';
 
-const stages: Array<{ id: LifecycleStage; label: string; href: string }> = [
-  { id: 'train', label: 'Train', href: `/workflows/${workflow.id}/train` },
-  { id: 'processing', label: 'Processing', href: `/workflows/${workflow.id}/train` },
-  { id: 'approve', label: 'Approve', href: `/workflows/${workflow.id}/approve` },
-  { id: 'deploy', label: 'Deploy', href: `/workflows/${workflow.id}/deploy` },
-];
+export function WorkflowHeader({ workflowId, stage }: { workflowId: string; stage: LifecycleStage }) {
+  const [workflow, setWorkflow] = useState<WorkflowSummary>();
+  const api = useMemo(() => getApiClient(), []);
+  const visibleStage = stage === 'processing' ? 'approve' : stage;
+  const modes = [
+    { id: 'train', label: 'Train', meta: stage === 'train' ? 'record' : 'done', href: `/workflows/${workflowId}/train` },
+    { id: 'approve', label: 'Edit', meta: workflow?.status === 'Published' ? 'approved' : 'draft', href: `/workflows/${workflowId}/approve` },
+    { id: 'deploy', label: 'Apply', meta: stage === 'deploy' ? 'live' : '', href: `/workflows/${workflowId}/deploy` },
+  ] as const;
 
-export function WorkflowHeader({ stage }: { stage: LifecycleStage }) {
+  useEffect(() => {
+    void api.getWorkflow(workflowId).then(setWorkflow).catch(() => undefined);
+  }, [api, workflowId]);
+
+  const statusLabel = visibleStage === 'train' ? 'Raw evidence preserved' : visibleStage === 'approve' ? 'Senior approval required' : 'Approved knowledge';
+
   return (
-    <>
-      <div className="workflow-header">
-        <div>
-          <p className="eyebrow">Golden Run · Workflow</p>
-          <h1>{workflow.title}</h1>
-          <div className="workflow-subline">
-            <Badge tone="green">Draft capture</Badge>
-            <span>Created {workflow.createdAt}</span>
-            <span>·</span>
-            <span>Updated {workflow.updatedAt}</span>
-          </div>
+    <header className="reasoning-workflow-header">
+      <div className="reasoning-titlebar">
+        <div className="reasoning-title-copy">
+          <h1>{workflow?.title ?? 'Golden Run workflow'}</h1>
         </div>
-        <div className="workflow-actions">
-          <Link href="/workflows">
-            <button className="ui-button ui-button-secondary ui-button-sm">
-              <Icon name="arrow-right" size={14} /> All workflows
-            </button>
-          </Link>
+        <div className="reasoning-title-actions">
+          <button type="button" className="reasoning-search"><Icon name="search" size={15} /><span>Search moments</span><kbd>⌘ K</kbd></button>
+          <span className={`reasoning-session-pill${visibleStage === 'deploy' ? ' live' : ''}`}><i />{visibleStage === 'deploy' ? 'Live' : visibleStage === 'train' ? 'Recording ready' : workflow?.status ?? 'Draft'}</span>
+          <button type="button" className="icon-button reasoning-more" aria-label="More workflow actions"><Icon name="more" size={17} /></button>
         </div>
       </div>
-      <nav className="lifecycle-tabs" aria-label="Workflow lifecycle">
-        {stages.map((item) => (
-          <Link
-            key={item.id}
-            id={`workflow-${item.id}-tab`}
-            className={`lifecycle-tab ${stage === item.id ? 'lifecycle-tab-active' : ''} ${['approve', 'deploy'].indexOf(item.id) < ['approve', 'deploy'].indexOf(stage) ? 'lifecycle-tab-done' : ''}`}
-            aria-current={stage === item.id ? 'page' : undefined}
-            href={item.href}
-          >
-            <span className="lifecycle-tab-number">
-              {item.id === 'train' ? (
-                <Icon name="video" size={14} />
-              ) : item.id === 'processing' ? (
-                <Icon name="activity" size={14} />
-              ) : item.id === 'approve' ? (
-                <Icon name="check" size={14} />
-              ) : (
-                <Icon name="play" size={13} />
-              )}
-            </span>
-            {item.label}
-          </Link>
-        ))}
-      </nav>
-    </>
+      <div className="reasoning-modebar">
+        <nav aria-label="Reasoning mode">
+          {modes.map((mode) => (
+            <Link key={mode.id} className={visibleStage === mode.id ? 'active' : ''} aria-current={visibleStage === mode.id ? 'page' : undefined} href={mode.href}>
+              {mode.label}{mode.meta ? <small>{mode.meta}</small> : null}{mode.id === 'deploy' && visibleStage === 'deploy' ? <i /> : null}
+            </Link>
+          ))}
+        </nav>
+        <div className="reasoning-governance"><Icon name="shield" size={13} />{statusLabel}{stage === 'processing' ? <Link href={`/workflows/${workflowId}/processing`}>View processing</Link> : null}</div>
+      </div>
+    </header>
   );
 }
