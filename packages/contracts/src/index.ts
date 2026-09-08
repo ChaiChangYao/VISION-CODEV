@@ -158,6 +158,24 @@ export const ProcedureStepSchema = z.object({
   deviationRules: z.array(z.string()),
   recoveryTransitions: z.array(IdSchema),
   confidence: z.number().min(0).max(1),
+  evidenceStartMs: z.number().int().nonnegative().optional(),
+  evidenceEndMs: z.number().int().positive().optional(),
+  keyframeMs: z.number().int().nonnegative().optional(),
+  transcriptExcerpt: z.string().min(1).optional(),
+}).superRefine((value, context) => {
+  const timing = [value.evidenceStartMs, value.keyframeMs, value.evidenceEndMs];
+  if (timing.some((item) => item !== undefined) && timing.some((item) => item === undefined)) {
+    context.addIssue({ code: 'custom', path: ['keyframeMs'], message: 'Generated evidence timing must include start, keyframe, and end.' });
+  }
+  if (value.evidenceStartMs !== undefined && value.keyframeMs !== undefined && value.keyframeMs < value.evidenceStartMs) {
+    context.addIssue({ code: 'custom', path: ['keyframeMs'], message: 'keyframeMs must be within the evidence range.' });
+  }
+  if (value.keyframeMs !== undefined && value.evidenceEndMs !== undefined && value.keyframeMs > value.evidenceEndMs) {
+    context.addIssue({ code: 'custom', path: ['keyframeMs'], message: 'keyframeMs must be within the evidence range.' });
+  }
+  if (value.evidenceStartMs !== undefined && value.evidenceEndMs !== undefined && value.evidenceEndMs <= value.evidenceStartMs) {
+    context.addIssue({ code: 'custom', path: ['evidenceEndMs'], message: 'evidenceEndMs must be greater than evidenceStartMs.' });
+  }
 });
 export type ProcedureStep = z.infer<typeof ProcedureStepSchema>;
 

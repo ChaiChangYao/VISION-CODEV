@@ -244,9 +244,13 @@ export function AnnotationWorkbench({
                 controls
                 preload="metadata"
                 src={mediaUrl}
-                onLoadedMetadata={(event) =>
-                  setDurationMs(Math.round(event.currentTarget.duration * 1000))
-                }
+                onLoadedMetadata={(event) => {
+                  setDurationMs(Math.round(event.currentTarget.duration * 1000));
+                  if (step.keyframeMs !== undefined) {
+                    seekVideo(event.currentTarget, step.keyframeMs);
+                    setCurrentMs(step.keyframeMs);
+                  }
+                }}
                 onTimeUpdate={(event) =>
                   setCurrentMs(Math.round(event.currentTarget.currentTime * 1000))
                 }
@@ -299,6 +303,16 @@ export function AnnotationWorkbench({
                 className="annotation-timeline-progress"
                 style={{ width: `${percent(currentMs, timelineDuration)}%` }}
               />
+              {step.evidenceStartMs !== undefined && step.evidenceEndMs !== undefined ? (
+                <span
+                  className="annotation-ai-evidence-range"
+                  aria-label={`AI evidence window ${formatRange(step.evidenceStartMs, step.evidenceEndMs)}`}
+                  style={{
+                    left: `${percent(step.evidenceStartMs, timelineDuration)}%`,
+                    width: `${Math.max(0.35, percent(step.evidenceEndMs - step.evidenceStartMs, timelineDuration))}%`,
+                  }}
+                />
+              ) : null}
               {isFiniteRange(form) ? (
                 <span
                   className="annotation-selected-range"
@@ -321,6 +335,18 @@ export function AnnotationWorkbench({
                   }}
                 />
               ))}
+              {step.keyframeMs !== undefined ? (
+                <button
+                  type="button"
+                  className="annotation-ai-evidence-marker"
+                  style={{ left: `${percent(step.keyframeMs, timelineDuration)}%` }}
+                  aria-label={`Generated step evidence at ${formatTime(step.keyframeMs)}`}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    seekVideo(videoRef.current, step.keyframeMs!);
+                  }}
+                />
+              ) : null}
               <span
                 className="annotation-playhead"
                 style={{ left: `${percent(currentMs, timelineDuration)}%` }}
@@ -642,8 +668,8 @@ function emptyForm(
 ): FormState {
   return {
     captureSessionId,
-    startMs: '0',
-    endMs: '3000',
+    startMs: String(step.evidenceStartMs ?? 0),
+    endMs: String(step.evidenceEndMs ?? 3000),
     verdict: 'correct',
     severity: 'info',
     confidence: '4',

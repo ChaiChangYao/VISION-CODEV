@@ -4,6 +4,7 @@ import {
   CONTRACT_VERSION,
   ProcedureAnnotationInputSchema,
   VoiceEventSchema,
+  ProcedureStepSchema,
   WorkflowIntentSchema,
 } from './index';
 
@@ -78,5 +79,17 @@ describe('shared contracts', () => {
         severity: 'catastrophic',
       }).success,
     ).toBe(false);
+  });
+
+  it('validates optional generated evidence timing as one bounded set', () => {
+    const step = {
+      id: '018f0d8e-7b6d-7c2a-8c41-3d9a8d0f1e22', ordinalHint: 0, title: 'Move rack',
+      instruction: 'Move rack A.', observedAction: 'Rack A moves.', evidenceRefs: [],
+      provenance: ['MODEL_INFERENCE'], startState: ['ready'], expectedAction: ['move rack'],
+      endState: ['placed'], allowableVariations: [], deviationRules: [], recoveryTransitions: [], confidence: 0.8,
+    };
+    expect(ProcedureStepSchema.parse({ ...step, evidenceStartMs: 1000, keyframeMs: 1500, evidenceEndMs: 2500 }).keyframeMs).toBe(1500);
+    expect(ProcedureStepSchema.safeParse({ ...step, keyframeMs: 1500 }).success).toBe(false);
+    expect(ProcedureStepSchema.safeParse({ ...step, evidenceStartMs: 1000, keyframeMs: 900, evidenceEndMs: 2500 }).success).toBe(false);
   });
 });

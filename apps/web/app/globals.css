@@ -1446,7 +1446,8 @@ textarea:focus-visible,
   content: '';
 }
 .annotation-timeline-progress,
-.annotation-selected-range {
+.annotation-selected-range,
+.annotation-ai-evidence-range {
   position: absolute;
   top: 9px;
   z-index: 1;
@@ -1462,6 +1463,11 @@ textarea:focus-visible,
   z-index: 2;
   background: #3aa897;
   box-shadow: 0 0 0 2px rgb(58 168 151 / 0.18);
+}
+.annotation-ai-evidence-range {
+  z-index: 2;
+  background: rgb(237 117 65 / 0.35);
+  box-shadow: inset 0 0 0 1px rgb(207 80 28 / 0.55);
 }
 .annotation-playhead {
   position: absolute;
@@ -1486,6 +1492,19 @@ textarea:focus-visible,
   border-radius: 3px;
   background: var(--teal);
   box-shadow: 0 0 0 1px rgb(16 40 37 / 0.16);
+}
+.annotation-ai-evidence-marker {
+  position: absolute;
+  z-index: 6;
+  top: 2px;
+  width: 12px;
+  height: 20px;
+  padding: 0;
+  transform: translateX(-6px);
+  border: 2px solid white;
+  border-radius: 6px 6px 2px 2px;
+  background: var(--reasoning-orange);
+  box-shadow: 0 0 0 1px rgb(125 48 18 / 0.24);
 }
 .annotation-timeline-marker-active {
   width: 17px;

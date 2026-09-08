@@ -2,7 +2,7 @@ import 'dotenv/config';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { execFile } from 'node:child_process';
 import { createReadStream, createWriteStream } from 'node:fs';
-import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { promisify } from 'node:util';
@@ -11,7 +11,9 @@ import { fileURLToPath } from 'node:url';
 import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { ProcedureGraphSchema, type ProcedureGraph } from '@vision-codef/contracts';
 import ffmpegPath from 'ffmpeg-static';
-import { analyzeWithVisionProvider, visionProviderConfig, type ModelObservationResult } from './vision-provider.js';
+import { analyzeWithVisionProvider, visionProviderConfig, type EvidenceWindowInput, type ModelObservationResult } from './vision-provider.js';
+import { transcribeWithOpenAI, transcriptForWindow, type TimestampedTranscript } from './transcription-provider.js';
+import { decodeLumaFrames, detectChangeEvents, type ChangeEvent } from './video-events.js';
 
 const run = promisify(execFile);
 const port = Number(process.env.VISION_CODEF_LOCAL_PROCESSING_PORT ?? 8092);
@@ -20,6 +22,11 @@ const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../..')
 const workRoot = resolve(process.env.VISION_CODEF_PROCESSING_WORK_DIR ?? join(projectRoot, '.run', 'local-processing'));
 const vision = visionProviderConfig();
 const model = vision.model;
+const processingPipelineVersion = 'timestamped-events-v2';
+const detectionWidth = 160;
+const detectionHeight = 90;
+const detectionFps = 2;
+const evidenceFramesPerEvent = 8;
 
 const s3 = new S3Client({
   region: process.env.S3_REGION ?? 'us-east-1',
@@ -47,9 +54,14 @@ type ObservationStep = {
   allowableVariations: string[];
   deviationRules: string[];
   confidence: number;
+  evidenceStartMs: number;
+  evidenceEndMs: number;
+  keyframeMs: number;
+  transcriptExcerpt: string;
+  changeScore: number;
 };
 
-type ObservationResult = { procedureVisible: boolean; screenDominates: boolean; physicalActionFrameCount: number; summary: string; steps: ObservationStep[] };
+type ObservationResult = { pipelineVersion: string; procedureVisible: boolean; screenDominates: boolean; physicalActionFrameCount: number; summary: string; steps: ObservationStep[] };
 class InsufficientVisualEvidenceError extends Error {}
 
 function send(response: ServerResponse, status: number, data: unknown) {
@@ -101,11 +113,49 @@ async function downloadMedia(input: ProviderInput): Promise<string> {
   return target;
 }
 
-async function extractFrames(videoPath: string, outputDir: string): Promise<string[]> {
+async function detectEvents(videoPath: string): Promise<{ events: ChangeEvent[]; durationMs: number }> {
+  if (!ffmpegPath) throw new Error('ffmpeg-static did not provide a binary for this platform.');
+  const bytes = await runBinary(ffmpegPath, ['-hide_banner', '-loglevel', 'error', '-i', videoPath, '-vf', `fps=${detectionFps},scale=${detectionWidth}:${detectionHeight},format=gray`, '-f', 'rawvideo', 'pipe:1']);
+  const frames = decodeLumaFrames(bytes, detectionWidth, detectionHeight, detectionFps);
+  const durationMs = Math.max(1, Math.round(frames.length * 1000 / detectionFps));
+  const events = detectChangeEvents(frames, durationMs);
+  if (events.length > 0) return { events, durationMs };
+  const keyframeMs = Math.max(0, Math.round(durationMs / 2));
+  return { events: [{ index: 0, startMs: Math.max(0, keyframeMs - 2000), keyframeMs, endMs: Math.min(durationMs, keyframeMs + 2000), changeScore: 0 }], durationMs };
+}
+
+async function extractEvidenceWindow(videoPath: string, outputDir: string, event: ChangeEvent): Promise<EvidenceWindowInput['frames']> {
   if (!ffmpegPath) throw new Error('ffmpeg-static did not provide a binary for this platform.');
   await mkdir(outputDir, { recursive: true });
-  await run(ffmpegPath, ['-hide_banner', '-loglevel', 'error', '-i', videoPath, '-vf', 'fps=1/6,scale=320:-2', '-frames:v', '5', '-q:v', '3', join(outputDir, 'sample-%02d.jpg')]);
-  return (await readdir(outputDir)).filter((name) => /^sample-\d+\.jpg$/.test(name)).sort().slice(0, 5).map((name) => join(outputDir, name));
+  const durationSeconds = Math.max(0.25, (event.endMs - event.startMs) / 1000);
+  const prefix = `event-${String(event.index).padStart(2, '0')}`;
+  await run(ffmpegPath, ['-hide_banner', '-loglevel', 'error', '-y', '-ss', (event.startMs / 1000).toFixed(3), '-i', videoPath, '-t', durationSeconds.toFixed(3), '-vf', `fps=${evidenceFramesPerEvent / durationSeconds},scale=512:-2`, '-frames:v', String(evidenceFramesPerEvent), '-q:v', '3', join(outputDir, `${prefix}-%02d.jpg`)]);
+  const paths = (await readdir(outputDir)).filter((name) => new RegExp(`^${prefix}-\\d+\\.jpg$`).test(name)).sort().slice(0, evidenceFramesPerEvent);
+  return Promise.all(paths.map(async (name, index) => ({
+    timestampMs: Math.round(event.startMs + (index * (event.endMs - event.startMs)) / Math.max(1, paths.length - 1)),
+    imageBase64: (await readFile(join(outputDir, name))).toString('base64'),
+  })));
+}
+
+async function extractAudio(videoPath: string, audioPath: string): Promise<boolean> {
+  if (!ffmpegPath) throw new Error('ffmpeg-static did not provide a binary for this platform.');
+  try {
+    await run(ffmpegPath, ['-hide_banner', '-loglevel', 'error', '-y', '-i', videoPath, '-map', '0:a:0?', '-vn', '-ac', '1', '-ar', '16000', '-b:a', '48k', audioPath]);
+    return (await stat(audioPath)).size > 0;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (/does not contain any stream|matches no streams|audio/i.test(message)) return false;
+    throw error;
+  }
+}
+
+async function runBinary(command: string, args: string[]): Promise<Uint8Array> {
+  return new Promise((resolvePromise, rejectPromise) => {
+    execFile(command, args, { encoding: 'buffer', maxBuffer: 256 * 1024 * 1024 }, (error, stdout) => {
+      if (error) rejectPromise(error);
+      else resolvePromise(new Uint8Array(stdout));
+    });
+  });
 }
 
 async function sha256File(path: string): Promise<string> {
@@ -118,7 +168,7 @@ async function reusableObservations(input: ProviderInput, videoPath: string): Pr
   const mediaHash = input.media.sha256;
   if (!mediaHash) return undefined;
   const cacheDir = join(workRoot, 'cache');
-  const cacheNamespace = `${vision.provider}-${vision.model}`.replace(/[^a-zA-Z0-9_.-]/g, '_');
+  const cacheNamespace = `${processingPipelineVersion}-${vision.provider}-${vision.model}`.replace(/[^a-zA-Z0-9_.-]/g, '_');
   const cachePath = join(cacheDir, `${cacheNamespace}-${mediaHash}.observations.json`);
   try { return JSON.parse(await readFile(cachePath, 'utf8')) as ObservationResult; } catch { /* Search prior successful sessions. */ }
   if (vision.provider !== 'ollama') {
@@ -135,7 +185,7 @@ async function reusableObservations(input: ProviderInput, videoPath: string): Pr
     try {
       if (await sha256File(candidateVideo) !== mediaHash) continue;
       const observations = JSON.parse(await readFile(candidateObservations, 'utf8')) as ObservationResult;
-      if (!Array.isArray(observations.steps) || observations.steps.length === 0) continue;
+      if (observations.pipelineVersion !== processingPipelineVersion || !Array.isArray(observations.steps) || observations.steps.length === 0) continue;
       await mkdir(cacheDir, { recursive: true });
       await writeFile(cachePath, JSON.stringify(observations, null, 2));
       return observations;
@@ -145,28 +195,50 @@ async function reusableObservations(input: ProviderInput, videoPath: string): Pr
   return undefined;
 }
 
-async function analyzeFrames(paths: string[]): Promise<ObservationResult> {
-  if (paths.length === 0) throw new Error('No representative frames could be extracted from the recording.');
-  const images = await Promise.all(paths.map(async (path) => (await readFile(path)).toString('base64')));
-  const parsed: ModelObservationResult = await analyzeWithVisionProvider(images, vision);
-  if (parsed.procedureVisible !== true || parsed.screenDominates !== false || Number(parsed.physicalActionFrameCount) < 2 || !Array.isArray(parsed.steps) || parsed.steps.length === 0) {
-    throw new InsufficientVisualEvidenceError(`No physical procedure is visible in the sampled frames. ${String(parsed.summary ?? '').trim()}`.trim());
+async function analyzeEvents(videoPath: string, transcript: TimestampedTranscript): Promise<ObservationResult> {
+  const { events } = await detectEvents(videoPath);
+  const windows: EvidenceWindowInput[] = [];
+  for (const event of events) {
+    const frames = await extractEvidenceWindow(videoPath, join(dirname(videoPath), 'event-frames-v2'), event);
+    if (frames.length < 6) continue;
+    windows.push({ ...event, transcript: transcriptForWindow(transcript, event.startMs, event.endMs), frames });
   }
+  if (windows.length === 0) throw new Error('No bounded evidence windows could be extracted from the recording.');
+  const results: ModelObservationResult[] = [];
+  for (let index = 0; index < windows.length; index += 4) results.push(await analyzeWithVisionProvider(windows.slice(index, index + 4), vision));
+  const steps: ObservationStep[] = [];
+  const usedEvents = new Set<number>();
+  for (const result of results) {
+    for (const step of result.steps ?? []) {
+      const event = windows.find((window) => window.index === Number(step.eventIndex));
+      if (!event || usedEvents.has(event.index)) continue;
+      usedEvents.add(event.index);
+      steps.push({
+        title: String(step.title || `Step ${steps.length + 1}`),
+        instruction: String(step.observedAction || `Perform step ${steps.length + 1}.`),
+        observedAction: String(step.observedAction || step.title || `Action ${steps.length + 1}`),
+        expectedAction: [String(step.observedAction || step.title || `step ${steps.length + 1}`)],
+        endState: String(step.endState || `Step ${steps.length + 1} complete`),
+        allowableVariations: [],
+        deviationRules: [`The result does not match: ${String(step.endState || `step ${steps.length + 1} complete`)}`],
+        confidence: Math.max(0, Math.min(1, Number(step.confidence ?? 0.6))),
+        evidenceStartMs: event.startMs,
+        evidenceEndMs: event.endMs,
+        keyframeMs: event.keyframeMs,
+        transcriptExcerpt: event.transcript,
+        changeScore: event.changeScore,
+      });
+    }
+  }
+  steps.sort((left, right) => left.keyframeMs - right.keyframeMs);
+  if (steps.length === 0) throw new InsufficientVisualEvidenceError(`No physical procedure is visible in the detected change windows. ${results.map((result) => result.summary).filter(Boolean).join(' ')}`.trim());
   return {
+    pipelineVersion: processingPipelineVersion,
     procedureVisible: true,
-    screenDominates: false,
-    physicalActionFrameCount: Number(parsed.physicalActionFrameCount),
-    summary: String(parsed.summary ?? 'Expert procedure observed.'),
-    steps: parsed.steps.slice(0, 8).map((step, index) => ({
-      title: String(step.title || `Step ${index + 1}`),
-      instruction: String(step.observedAction || `Perform step ${index + 1}.`),
-      observedAction: String(step.observedAction || `Action observed in frame sequence ${index + 1}.`),
-      expectedAction: [String(step.observedAction || step.title || `step ${index + 1}`)],
-      endState: String(step.endState || `Step ${index + 1} complete`),
-      allowableVariations: [],
-      deviationRules: [`The result does not match: ${String(step.endState || `step ${index + 1} complete`)}`],
-      confidence: Math.max(0, Math.min(1, Number(step.confidence ?? 0.6))),
-    })),
+    screenDominates: results.every((result) => result.screenDominates === true),
+    physicalActionFrameCount: results.reduce((total, result) => total + Number(result.physicalActionFrameCount || 0), 0),
+    summary: results.map((result) => result.summary).filter(Boolean).join(' '),
+    steps,
   };
 }
 
@@ -194,6 +266,10 @@ function graphFromObservations(observations: ObservationResult): ProcedureGraph 
       deviationRules: step.deviationRules,
       recoveryTransitions: index > 0 ? [stepIds[index - 1]] : [],
       confidence: step.confidence,
+      evidenceStartMs: step.evidenceStartMs,
+      evidenceEndMs: step.evidenceEndMs,
+      keyframeMs: step.keyframeMs,
+      transcriptExcerpt: step.transcriptExcerpt || undefined,
     })),
   });
 }
@@ -208,17 +284,28 @@ async function route(request: IncomingMessage, response: ServerResponse) {
     return send(response, 200, artifact(input, 'media'));
   }
   if (endpoint === 'transcribe') {
-    return send(response, 200, await persistJson(input, 'transcript', { text: '', status: 'not-configured' }));
+    const transcriptPath = join(sessionDir(input), 'transcript.json');
+    try { await readFile(transcriptPath, 'utf8'); } catch {
+      const video = await downloadMedia(input);
+      const audioPath = join(sessionDir(input), 'speech.mp3');
+      const hasAudio = await extractAudio(video, audioPath);
+      const transcript = hasAudio
+        ? await transcribeWithOpenAI(audioPath, { apiKey: vision.openaiApiKey, baseUrl: vision.openaiBaseUrl, model: process.env.OPENAI_TRANSCRIPTION_MODEL ?? 'whisper-1' })
+        : { text: '', status: 'no-audio' as const, segments: [] };
+      await persistJson(input, 'transcript', transcript);
+    }
+    return send(response, 200, artifact(input, 'transcript'));
   }
   if (endpoint === 'observations') {
     const observationPath = join(sessionDir(input), 'observations.json');
-    try {
-      await readFile(observationPath, 'utf8');
-    } catch {
+    let current = false;
+    try { current = (JSON.parse(await readFile(observationPath, 'utf8')) as ObservationResult).pipelineVersion === processingPipelineVersion; } catch { /* Rebuild below. */ }
+    if (!current) {
       const video = await downloadMedia(input);
-      const observations = await reusableObservations(input, video) ?? await analyzeFrames(await extractFrames(video, join(sessionDir(input), 'frames')));
+      const transcript = JSON.parse(await readFile(join(sessionDir(input), 'transcript.json'), 'utf8')) as TimestampedTranscript;
+      const observations = await reusableObservations(input, video) ?? await analyzeEvents(video, transcript);
       await persistJson(input, 'observations', observations);
-      if (input.media.sha256) { const cacheDir = join(workRoot, 'cache'); const cacheNamespace = `${vision.provider}-${vision.model}`.replace(/[^a-zA-Z0-9_.-]/g, '_'); await mkdir(cacheDir, { recursive: true }); await writeFile(join(cacheDir, `${cacheNamespace}-${input.media.sha256}.observations.json`), JSON.stringify(observations, null, 2)); }
+      if (input.media.sha256) { const cacheDir = join(workRoot, 'cache'); const cacheNamespace = `${processingPipelineVersion}-${vision.provider}-${vision.model}`.replace(/[^a-zA-Z0-9_.-]/g, '_'); await mkdir(cacheDir, { recursive: true }); await writeFile(join(cacheDir, `${cacheNamespace}-${input.media.sha256}.observations.json`), JSON.stringify(observations, null, 2)); }
     }
     return send(response, 200, artifact(input, 'observations'));
   }

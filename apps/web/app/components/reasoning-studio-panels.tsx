@@ -105,12 +105,19 @@ export function EditReasoningStudio(props: EditProps) {
         <span>{props.selectedStep + 1} of {props.graph.steps.length} moments reviewed</span>
       </div>
       <nav className="procedure-moment-strip" aria-label="Procedure moments">
-        {props.graph.steps.map((item, index) => <button key={item.id} className={index === props.selectedStep ? 'active' : ''} onClick={() => props.setSelectedStep(index)}><span>{String(index + 1).padStart(2, '0')}</span><strong>{item.title}</strong><small>{Math.round(item.confidence * 100)}% source confidence</small></button>)}
+        {props.graph.steps.map((item, index) => <button key={item.id} className={index === props.selectedStep ? 'active' : ''} onClick={() => props.setSelectedStep(index)}><span>{String(index + 1).padStart(2, '0')}</span><strong>{item.title}</strong><small>{item.keyframeMs === undefined ? `${Math.round(item.confidence * 100)}% source confidence` : `${formatMoment(item.keyframeMs)} · ${Math.round(item.confidence * 100)}% confidence`}</small></button>)}
       </nav>
       {step ? <AnnotationWorkbench key={step.id} step={step} expectedStateLabel={props.graph.states.find((state) => step.endState.includes(state.id))?.label} captures={props.captures} annotations={props.annotations} referencePack={props.referencePack} procedurePublished={props.graph.published} onSave={props.onSaveAnnotation} onPublishReferencePack={props.onPublishReferencePack} onLoadMedia={props.onLoadMedia} /> : null}
       <div className="edit-publish-bar"><div><Icon name="shield" size={14} /><span><strong>Procedure instruction</strong><small>Publishing requires explicit senior approval.</small></span></div><textarea aria-label="Approved procedure instruction" value={props.instruction} onChange={(event) => props.setInstruction(event.target.value)} />{props.graph.published ? <Badge tone="green">Published v{props.graph.version}</Badge> : <Button variant="primary" onClick={props.onPublish} disabled={!props.instruction.trim()}><Icon name="check" size={14} /> Approve procedure</Button>}</div>
     </div>
   );
+}
+
+function formatMoment(milliseconds: number) {
+  const totalSeconds = Math.max(0, milliseconds) / 1000;
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds - minutes * 60;
+  return `${minutes}:${seconds.toFixed(seconds % 1 ? 1 : 0).padStart(seconds % 1 ? 4 : 2, '0')}`;
 }
 
 type ApplyProps = { graph?: ProcedureGraph; deployment?: DeploymentView; onStart: () => void; onRecover: () => void };

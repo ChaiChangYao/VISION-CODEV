@@ -21,8 +21,11 @@ const tenantB = {
 describe('tenant isolation migration contract', () => {
   it('forces RLS and installs a tenant policy on every tenant table', async () => {
     const sql = await readFile(migrationPath, 'utf8');
+    expect(sql).toContain('ALTER TABLE companies FORCE ROW LEVEL SECURITY');
+    expect(sql).toContain('CREATE POLICY tenant_isolation ON companies');
+    expect(sql).toContain('ALTER TABLE %I FORCE ROW LEVEL SECURITY');
+    expect(sql).toContain('CREATE POLICY tenant_isolation ON %I');
     for (const table of [
-      'companies',
       'members',
       'workflows',
       'capture_sessions',
@@ -32,8 +35,6 @@ describe('tenant isolation migration contract', () => {
       'deployments',
       'audit_events',
     ]) {
-      expect(sql).toContain('ALTER TABLE %I FORCE ROW LEVEL SECURITY');
-      expect(sql).toContain('CREATE POLICY tenant_isolation ON %I');
       expect(sql).toContain(`'${table}'`);
     }
   });
