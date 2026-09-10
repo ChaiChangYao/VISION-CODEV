@@ -162,6 +162,26 @@ export const ProcedureStepSchema = z.object({
   evidenceEndMs: z.number().int().positive().optional(),
   keyframeMs: z.number().int().nonnegative().optional(),
   transcriptExcerpt: z.string().min(1).optional(),
+  seniorReview: z.object({
+    reviewed: z.boolean(),
+    object: z.string(),
+    hand: z.enum(['left', 'right', 'both', 'unknown']),
+    beforeState: z.string(),
+    afterState: z.string(),
+    uncertainty: z.string(),
+    group: z.string(),
+    reasoning: z.string(),
+    completionCheck: z.string(),
+    documentReferences: z.string(),
+    findings: z.array(z.object({
+      id: IdSchema, timestampMs: z.number().int().nonnegative(), text: z.string(),
+      // Normalized video coordinates, never viewport pixels or altered source media.
+      region: z.object({
+        x: z.number().min(0).max(1), y: z.number().min(0).max(1),
+        radius: z.number().min(0.01).max(0.5),
+      }).optional(),
+    })).optional(),
+  }).optional(),
 }).superRefine((value, context) => {
   const timing = [value.evidenceStartMs, value.keyframeMs, value.evidenceEndMs];
   if (timing.some((item) => item !== undefined) && timing.some((item) => item === undefined)) {
@@ -185,6 +205,7 @@ export const ProcedureGraphSchema = z.object({
   states: z.array(ProcedureStateSchema),
   steps: z.array(ProcedureStepSchema),
   published: z.boolean(),
+  analysis: z.object({ version: z.literal('senior-atomic-v1'), durationMs: z.number().positive(), windowsCompleted: z.number().int().nonnegative(), windowsTotal: z.number().int().positive(), mediaSha256: z.string(), model: z.string() }).optional(),
   contentHash: z.string().optional(),
 });
 export type ProcedureGraph = z.infer<typeof ProcedureGraphSchema>;

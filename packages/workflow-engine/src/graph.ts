@@ -65,6 +65,7 @@ export function normalizeProcedureGraph(graph: ProcedureGraph): ProcedureGraph {
       .map(normalizeStep)
       .sort((a, b) => a.ordinalHint - b.ordinalHint || a.id.localeCompare(b.id)),
     published: parsed.data.published,
+    ...(parsed.data.analysis ? { analysis: parsed.data.analysis } : {}),
   };
 
   normalized.contentHash = sha256(normalized);
@@ -84,6 +85,9 @@ export function validateProcedureGraph(graph: ProcedureGraph): GraphValidationRe
   }
 
   const stateIds = new Set<string>();
+  if (normalized.published && normalized.analysis && (normalized.steps.length === 0 || normalized.analysis.windowsCompleted !== normalized.analysis.windowsTotal || normalized.steps.some((step) => !step.seniorReview?.reviewed))) {
+    issues.push(issue('SENIOR_REVIEW_REQUIRED', 'steps', 'Complete coverage and explicit review of every action are required before publication.'));
+  }
   normalized.states.forEach((state, index) => {
     if (stateIds.has(state.id))
       issues.push(issue('DUPLICATE_STATE_ID', `states[${index}].id`, 'State IDs must be unique.'));
@@ -93,6 +97,9 @@ export function validateProcedureGraph(graph: ProcedureGraph): GraphValidationRe
   const stepIds = new Set<string>();
   let previousOrdinal = -1;
   normalized.steps.forEach((step, index) => {
+    if (normalized.analysis && step.seniorReview?.findings?.some((finding) => finding.timestampMs > normalized.analysis!.durationMs || (normalized.published && !finding.text.trim()))) {
+      issues.push(issue('INVALID_FINDING', `steps[${index}].seniorReview.findings`, 'Findings must be within the recording and contain reasoning before publication.'));
+    }
     if (stepIds.has(step.id))
       issues.push(issue('DUPLICATE_STEP_ID', `steps[${index}].id`, 'Step IDs must be unique.'));
     stepIds.add(step.id);

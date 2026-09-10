@@ -47,6 +47,14 @@ const graph: ProcedureGraph = {
 };
 
 describe('deterministic procedure engine', () => {
+  it('requires explicit review and complete coverage for senior drafts', () => {
+    const candidate: ProcedureGraph = { ...graph, analysis: { version: 'senior-atomic-v1', durationMs: 8000, windowsCompleted: 1, windowsTotal: 1, mediaSha256: 'test', model: 'gpt-5-mini' }, steps: graph.steps.map((step) => ({ ...step, provenance: ['MODEL_INFERENCE', 'PUBLISHED_REQUIREMENT'], seniorReview: { reviewed: false, object: '', hand: 'unknown', beforeState: '', afterState: '', uncertainty: '', group: '', reasoning: '', completionCheck: '', documentReferences: '' } })) };
+    expect(() => publishProcedureGraph(candidate)).toThrow('explicit review');
+    candidate.steps[0]!.seniorReview!.reviewed = true;
+    expect(publishProcedureGraph(candidate).analysis).toEqual(candidate.analysis);
+    candidate.analysis!.windowsCompleted = 0;
+    expect(() => publishProcedureGraph(candidate)).toThrow('Complete coverage');
+  });
   it('normalizes repeated values and yields a stable hash', () => {
     const first = normalizeProcedureGraph(graph);
     const second = normalizeProcedureGraph({ ...graph, states: [...graph.states].reverse() });

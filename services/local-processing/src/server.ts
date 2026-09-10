@@ -2,7 +2,7 @@ import 'dotenv/config';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { execFile } from 'node:child_process';
 import { createReadStream, createWriteStream } from 'node:fs';
-import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, stat, writeFile, rename } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { promisify } from 'node:util';
@@ -14,6 +14,9 @@ import ffmpegPath from 'ffmpeg-static';
 import { analyzeWithVisionProvider, visionProviderConfig, type EvidenceWindowInput, type ModelObservationResult } from './vision-provider.js';
 import { transcribeWithOpenAI, transcriptForWindow, type TimestampedTranscript } from './transcription-provider.js';
 import { decodeLumaFrames, detectChangeEvents, type ChangeEvent } from './video-events.js';
+import { ATOMIC_VERSION } from './atomic-analysis.js';
+import { inspectMedia, processSeniorVideo, seniorGraph, type SeniorResult } from './senior-processing.js';
+import { withApiBudget } from './api-budget.js';
 
 const run = promisify(execFile);
 const port = Number(process.env.VISION_CODEF_LOCAL_PROCESSING_PORT ?? 8092);
@@ -27,6 +30,10 @@ const detectionWidth = 160;
 const detectionHeight = 90;
 const detectionFps = 2;
 const evidenceFramesPerEvent = 8;
+const budgetPath = join(workRoot, 'senior-api-budget.json');
+const budgetCap = Math.min(10, Number(process.env.VISION_CODEF_SENIOR_BUDGET_USD ?? 10));
+const active = new Map<string, Promise<unknown>>();
+const progress = new Map<string, { completed: number; total: number }>();
 
 const s3 = new S3Client({
   region: process.env.S3_REGION ?? 'us-east-1',
@@ -76,6 +83,7 @@ async function json(request: IncomingMessage): Promise<ProviderInput> {
   if (!value.companyId || !value.workflowId || !value.captureSessionId || !value.media?.objectKey) {
     throw new Error('Incomplete processing request.');
   }
+  if (![value.companyId, value.workflowId, value.captureSessionId].every((id) => /^[a-zA-Z0-9_-]+$/.test(id))) throw new Error('Invalid processing identifier.');
   if (value.media.companyId !== value.companyId || !value.media.objectKey.startsWith(`companies/${value.companyId}/`)) {
     throw new Error('Media reference is outside the requesting company boundary.');
   }
@@ -105,11 +113,14 @@ async function persistJson(input: ProviderInput, kind: 'transcript' | 'observati
 
 async function downloadMedia(input: ProviderInput): Promise<string> {
   const target = join(sessionDir(input), 'egress.mp4');
-  try { await readFile(target); return target; } catch { /* Download below. */ }
+  try { await stat(target); if (!input.media.sha256 || await sha256File(target) === input.media.sha256) return target; } catch { /* Download below. */ }
   await mkdir(dirname(target), { recursive: true });
   const response = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: input.media.objectKey }));
   if (!response.Body) throw new Error('The canonical MP4 could not be read from MinIO.');
-  await pipeline(response.Body as NodeJS.ReadableStream, createWriteStream(target));
+  const temporary = `${target}.${randomUUID()}.download`;
+  await pipeline(response.Body as NodeJS.ReadableStream, createWriteStream(temporary));
+  if (input.media.sha256 && await sha256File(temporary) !== input.media.sha256) throw new Error('Downloaded MP4 SHA-256 mismatch.');
+  await rename(temporary, target);
   return target;
 }
 
@@ -279,6 +290,7 @@ async function route(request: IncomingMessage, response: ServerResponse) {
   if (request.method !== 'POST') return send(response, 404, { error: 'Not found.' });
   const input = await json(request);
   const endpoint = request.url?.split('/').filter(Boolean).at(-1);
+  if (endpoint === 'progress') return send(response, 200, progress.get(`${input.companyId}/${input.captureSessionId}`) ?? { completed: 0, total: 0 });
   if (endpoint === 'finalize') {
     await downloadMedia(input);
     return send(response, 200, artifact(input, 'media'));
@@ -288,15 +300,32 @@ async function route(request: IncomingMessage, response: ServerResponse) {
     try { await readFile(transcriptPath, 'utf8'); } catch {
       const video = await downloadMedia(input);
       const audioPath = join(sessionDir(input), 'speech.mp3');
-      const hasAudio = await extractAudio(video, audioPath);
+      const info = await inspectMedia(video);
+      const hasAudio = info.hasSound && await extractAudio(video, audioPath);
       const transcript = hasAudio
-        ? await transcribeWithOpenAI(audioPath, { apiKey: vision.openaiApiKey, baseUrl: vision.openaiBaseUrl, model: process.env.OPENAI_TRANSCRIPTION_MODEL ?? 'whisper-1' })
+        ? await withApiBudget(budgetPath, budgetCap, `${input.captureSessionId}:speech`, () => transcribeWithOpenAI(audioPath, { apiKey: vision.openaiApiKey, baseUrl: vision.openaiBaseUrl, model: 'whisper-1' }), () => undefined, Math.ceil(info.durationMs / 60_000) * 0.006 + 0.006)
         : { text: '', status: 'no-audio' as const, segments: [] };
       await persistJson(input, 'transcript', transcript);
     }
     return send(response, 200, artifact(input, 'transcript'));
   }
   if (endpoint === 'observations') {
+    if (vision.provider === 'openai') {
+      const key = `${input.companyId}/${input.captureSessionId}`;
+      let task = active.get(key);
+      if (!task) {
+        task = (async () => {
+          const video = await downloadMedia(input);
+          const transcript = JSON.parse(await readFile(join(sessionDir(input), 'transcript.json'), 'utf8')) as TimestampedTranscript;
+          const result = await processSeniorVideo({ path: video, cacheRoot: join(workRoot, input.companyId, 'atomic-cache'), budgetPath, capUsd: budgetCap, config: vision, transcript, expectedHash: input.media.sha256, progress: async (completed, total) => { progress.set(key, { completed, total }); } });
+          await persistJson(input, 'observations', result);
+        })();
+        active.set(key, task);
+        void task.finally(() => active.delete(key)).catch(() => {});
+      }
+      await task;
+      return send(response, 200, artifact(input, 'observations'));
+    }
     const observationPath = join(sessionDir(input), 'observations.json');
     let current = false;
     try { current = (JSON.parse(await readFile(observationPath, 'utf8')) as ObservationResult).pipelineVersion === processingPipelineVersion; } catch { /* Rebuild below. */ }
@@ -311,7 +340,7 @@ async function route(request: IncomingMessage, response: ServerResponse) {
   }
   if (endpoint === 'procedure') {
     const observations = JSON.parse(await readFile(join(sessionDir(input), 'observations.json'), 'utf8')) as ObservationResult;
-    const normalizedGraph = graphFromObservations(observations);
+    const normalizedGraph = observations.pipelineVersion === ATOMIC_VERSION ? seniorGraph(observations as unknown as SeniorResult) : graphFromObservations(observations);
     await persistJson(input, 'procedure-draft', normalizedGraph);
     return send(response, 200, { ...artifact(input, 'procedure-draft'), normalizedGraph });
   }

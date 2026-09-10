@@ -278,6 +278,13 @@ async function route(request: IncomingMessage, response: ServerResponse) {
   const parts = path.split('/').filter(Boolean).slice(1);
   const isMediaImport = parts[0] === 'workflows' && parts[2] === 'capture-sessions' && parts[3] === 'import' && parts.length === 4 && method === 'POST';
   const payload = ['POST', 'PATCH', 'PUT'].includes(method) && !isMediaImport ? await readJson(request) : {};
+  if (parts[0] === 'workflows' && parts[2] === 'procedure-graph' && (method === 'PATCH' || method === 'POST')) {
+    const existing = getWorkflow(parts[1]!, companyId).graph;
+    if (existing?.analysis && payload.graph) {
+      const incoming = payload.graph as ProcedureGraph;
+      if (JSON.stringify(incoming.analysis) !== JSON.stringify(existing.analysis)) throw new HttpError(400, 'VALIDATION_FAILED', 'Source analysis metadata cannot be removed or changed during review.');
+    }
+  }
   if (parts[0] === 'capture-token' && parts.length === 1 && method === 'POST') { const sessionId = String(payload.sessionId ?? ''); const workflowId = String(payload.workflowId ?? ''); const deviceId = String(payload.deviceId ?? ''); const capture = getCapture(sessionId, companyId); if (workflowId !== capture.workflowId) throw new HttpError(403, 'FORBIDDEN_TENANT', 'The capture session does not belong to the requested workflow.'); if (String(payload.memberId ?? '') !== memberId) throw new HttpError(403, 'FORBIDDEN_TENANT', 'The token member must match the authenticated request member.'); if (!capture.pairedDeviceId || !deviceId || deviceId !== capture.pairedDeviceId) throw new HttpError(403, 'FORBIDDEN_TENANT', 'The phone must claim this capture session before a publisher token is issued.'); if (!liveKitConfigured) throw new HttpError(503, 'EXTERNAL_PROVIDER_UNAVAILABLE', 'LiveKit credentials are not configured.'); const issued = await issueLiveKitToken({ companyId, memberId, workflowId: capture.workflowId, sessionId: capture.id, role: 'publisher' }); send(response, 200, issued, traceId); return; }
   if (parts[0] === 'workflows' && parts[1] === 'intent' && method === 'POST') { send(response, 200, classifyWorkflowIntent(String(payload.brief ?? payload.text ?? '')), traceId); return; }
   if (parts[0] === 'workflows' && parts.length === 1 && method === 'GET') { send(response, 200, [...store.workflows.values()].filter((value) => value.companyId === companyId), traceId); return; }

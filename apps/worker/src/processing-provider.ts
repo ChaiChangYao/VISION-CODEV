@@ -5,11 +5,13 @@ import {
 } from '@vision-codef/contracts';
 import type { ProcessingActivityContext, ProcessingArtifact } from './processing-activities.js';
 import { heartbeat as temporalHeartbeat } from '@temporalio/activity';
+import { configuredProcessingProgressSink } from './processing-progress-sink.js';
 
 export type ProcessingProviderClientOptions = {
   baseUrl: string;
   fetcher?: typeof fetch;
   heartbeat?: (details?: unknown) => void;
+  reportProgress?: ReturnType<typeof configuredProcessingProgressSink>;
 };
 
 export class InvalidMediaReferenceError extends Error {}
@@ -35,6 +37,17 @@ export function createHttpProcessingProviderHandlers(options: ProcessingProvider
   async function call(endpoint: string, input: ProviderInput): Promise<ProcessingArtifact> {
     options.heartbeat?.({ endpoint, state: 'requesting' });
     const heartbeatTimer = options.heartbeat ? setInterval(() => options.heartbeat?.({ endpoint, state: 'waiting-for-provider' }), 10_000) : undefined;
+    let reporting = false;
+    const progressTimer = endpoint === 'observations' && options.reportProgress ? setInterval(() => {
+      if (reporting) return;
+      reporting = true;
+      void (async () => {
+        const response = await fetcher(`${baseUrl}/v1/processing/progress`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(input), signal: AbortSignal.timeout(5000) });
+        if (!response.ok) return;
+        const { data } = await response.json() as { data: { completed: number; total: number } };
+        await options.reportProgress!({ companyId: input.companyId, workflowId: input.workflowId, captureSessionId: input.captureSessionId, stage: 'observing', progress: data.total ? 45 + Math.floor(34 * data.completed / data.total) : 45, message: data.total ? `Analyzed ${data.completed} of ${data.total} evidence windows. Completed windows are saved.` : 'Preparing full-recording evidence windows.', reportedAt: new Date().toISOString() });
+      })().catch(() => {}).finally(() => { reporting = false; });
+    }, 10_000) : undefined;
     let response: Response;
     try {
       response = await fetcher(`${baseUrl}/v1/processing/${endpoint}`, {
@@ -44,10 +57,11 @@ export function createHttpProcessingProviderHandlers(options: ProcessingProvider
           'idempotency-key': input.idempotencyKey,
         },
         body: JSON.stringify(input),
-        signal: AbortSignal.timeout(6 * 60_000),
+        signal: AbortSignal.timeout(55 * 60_000),
       });
     } finally {
       if (heartbeatTimer) clearInterval(heartbeatTimer);
+      if (progressTimer) clearInterval(progressTimer);
     }
     if (response.status === 400) throw new InvalidMediaReferenceError(`Processing provider rejected ${endpoint} input.`);
     if (response.status === 415) throw new UnsupportedMediaError(`Processing provider does not support ${endpoint} media.`);
@@ -74,7 +88,7 @@ export function createHttpProcessingProviderHandlers(options: ProcessingProvider
 export function createConfiguredProcessingProviderHandlers(env: NodeJS.ProcessEnv = process.env) {
   const baseUrl = env.VISION_CODEF_PROCESSING_PROVIDER_URL?.trim();
   if (!baseUrl) throw new ProcessingProviderUnavailableError('VISION_CODEF_PROCESSING_PROVIDER_URL is required to run Temporal processing.');
-  return createHttpProcessingProviderHandlers({ baseUrl, heartbeat: temporalHeartbeat });
+  return createHttpProcessingProviderHandlers({ baseUrl, heartbeat: temporalHeartbeat, reportProgress: configuredProcessingProgressSink(env) });
 }
 
 function unwrapData(value: unknown): unknown {

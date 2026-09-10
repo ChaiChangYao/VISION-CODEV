@@ -1,0 +1,151 @@
+.root {
+  padding: 24px;
+}
+.root h2 {
+  margin: 0 0 8px;
+}
+.root p {
+  line-height: 1.5;
+  margin: 12px 0 18px;
+}
+.root button {
+  border: 1px solid #cbd6d2;
+  border-radius: 7px;
+  padding: 10px 14px;
+  margin: 4px 4px 4px 0;
+  background: #fff;
+  color: #175e54;
+  cursor: pointer;
+}
+.root button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.root button:focus-visible {
+  outline: 3px solid #ee9a65;
+  outline-offset: 2px;
+}
+.root input,
+.root textarea,
+.root select {
+  display: block;
+  width: 100%;
+  padding: 9px;
+  border: 1px solid #cbd6d2;
+  border-radius: 6px;
+  margin: 5px 0 12px;
+  font: inherit;
+  background: white;
+}
+.root label {
+  display: block;
+  font-size: 14px;
+}
+.root summary {
+  cursor: pointer;
+  padding: 10px 0;
+}
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(280px, 2fr);
+  gap: 24px;
+}
+.transport {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.transport output {
+  margin-left: auto;
+  font:
+    12px ui-monospace,
+    monospace;
+}
+.timeline {
+  border: 1px solid #dbe4e0;
+  background: #f7faf8;
+  border-radius: 10px;
+  padding: 14px;
+  margin: 10px 0 16px;
+}
+.timelineScroll {
+  overflow-x: auto;
+  padding-bottom: 8px;
+}
+.reviewCue {
+  background: #f7faf8;
+  border-left: 3px solid #087f73;
+  padding: 10px;
+  font-size: 13px;
+}
+.timeline input[type='range'] {
+  padding: 0;
+  accent-color: #087f73;
+  cursor: pointer;
+}
+.markerTracks {
+  position: relative;
+  min-height: 30px;
+}
+.root .actionMarker {
+  position: absolute;
+  height: 24px;
+  min-width: 18px;
+  padding: 0;
+  margin: 0;
+  border: 1px solid #88bcb0;
+  border-radius: 4px;
+  background: #d9eee7;
+  font-size: 11px;
+  overflow: hidden;
+}
+.root .selectedMarker {
+  background: #087f73;
+  color: white;
+  border-color: #087f73;
+}
+.playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: #d56a37;
+  pointer-events: none;
+}
+.findingTrack {
+  position: relative;
+  height: 30px;
+}
+.root .findingMarker {
+  position: absolute;
+  padding: 0 3px;
+  margin: 0;
+  border: 0;
+  background: transparent;
+  color: #ab641d;
+  height: 28px;
+}
+.findings {
+  border-top: 1px solid #dbe4e0;
+  margin-top: 18px;
+  padding-top: 16px;
+}
+.findings h3 {
+  font-size: 15px;
+  margin: 0;
+}
+.findings small,
+.timeline small {
+  display: block;
+  color: #596b65;
+  line-height: 1.5;
+}
+@media (max-width: 900px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+  .root {
+    padding: 16px;
+  }
+}

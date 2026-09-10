@@ -17,7 +17,11 @@ export function WorkflowHeader({ workflowId, stage }: { workflowId: string; stag
   ] as const;
 
   useEffect(() => {
-    void api.getWorkflow(workflowId).then(setWorkflow).catch(() => undefined);
+    let cancelled = false;
+    const refresh = () => void api.getWorkflow(workflowId).then((value) => { if (!cancelled) setWorkflow(value); }).catch(() => undefined);
+    refresh();
+    const timer = window.setInterval(refresh, 5000);
+    return () => { cancelled = true; window.clearInterval(timer); };
   }, [api, workflowId]);
 
   const statusLabel = visibleStage === 'train' ? 'Raw evidence preserved' : visibleStage === 'approve' ? 'Senior approval required' : 'Approved knowledge';

@@ -3,7 +3,7 @@ import { CONTRACT_VERSION, type MediaObjectReference, type ProcessingCompletion 
 import type { ProcessingActivities, ProcessingArtifact, ProcessingActivityContext } from './processing-activities.js';
 
 const { finalizeCapture, transcribe, extractObservations, induceProcedure, persistProcessingCompletion, reportProcessingProgress } = proxyActivities<ProcessingActivities>({
-  startToCloseTimeout: '10 minutes',
+  startToCloseTimeout: '60 minutes',
   heartbeatTimeout: '30 seconds',
   retry: {
     maximumAttempts: 5,

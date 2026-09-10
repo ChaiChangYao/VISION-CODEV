@@ -8,6 +8,7 @@ import { demoGraph } from '../../src/lib/demo-data';
 import { LiveKitMonitor } from './livekit-monitor';
 import { AnnotationWorkbench } from './annotation-workbench';
 import { ApplyReasoningStudio, EditReasoningStudio, TrainReasoningStudio } from './reasoning-studio-panels';
+import { SeniorReviewStudio } from './senior-review-studio';
 
 type Stage = 'train' | 'processing' | 'approve' | 'deploy';
 
@@ -123,6 +124,7 @@ export function ConnectedGoldenRun({ workflowId, stage }: { workflowId: string; 
 
   if (stage === 'approve' && !graph) return <div><Notice message={message} error={error} /><Card className="surface-card"><StateNotice tone="amber" icon="activity" title={processing?.status === 'blocked' || processing?.status === 'failed' ? 'Capture needs another run' : 'Waiting for processing'}>{processing?.message ?? 'The procedure graph becomes available after capture finalization and durable processing.'}</StateNotice></Card></div>;
   if (stage === 'processing') return <ProcessingPanel workflowId={workflowId} capture={capture} processing={processing} message={message} error={error} />;
+  if (stage === 'approve' && graph?.analysis) return <SeniorReviewStudio graph={graph} assetId={reviewCaptures[0]?.mediaAsset?.id} onChange={setGraph} onSave={async (value) => { setGraph(await api.updateProcedureGraph(workflowId, value)); }} onPublish={async (value) => { setGraph(await api.publishProcedure(workflowId, { graph: value, reviewerNote: 'Senior reviewed every action in their recording and explicitly published the procedure.' })); }} onLoadMedia={api.getMediaContent} />;
   if (stage === 'approve') { const approvedGraph = graph!; return <><Notice message={message} error={error} /><EditReasoningStudio graph={approvedGraph} captures={reviewCaptures} annotations={annotations} referencePack={referencePack} selectedStep={selectedStep} instruction={instruction} setSelectedStep={(index) => { setSelectedStep(index); setInstruction(approvedGraph.steps[index]?.instruction ?? ''); }} setInstruction={setInstruction} onPublish={publish} onSaveAnnotation={saveAnnotation} onPublishReferencePack={publishReferencePack} onLoadMedia={api.getMediaContent} /></>; }
   if (stage === 'deploy') return <><Notice message={message} error={error} /><ApplyReasoningStudio graph={graph} deployment={deployment} onStart={startDeployment} onRecover={recover} /></>;
   return <><Notice message={message} error={error} /><TrainReasoningStudio capture={capture} monitor={monitor} processing={processing} importing={importing} retrying={retrying} onCreate={createCapture} onImport={importCapture} onRetryProcessing={retryProcessing} onStart={startCapture} onStop={stopCapture} onLoadMedia={api.getMediaContent} /></>;
