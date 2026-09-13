@@ -19,7 +19,7 @@ const initialSnapshot: CaptureSnapshot = {
   recoveryPending: 0,
 };
 
-export function PhoneCaptureScreen() {
+export function PhoneCaptureScreen({ onBack }: { onBack?: () => void } = {}) {
   const [snapshot, setSnapshot] = useState(initialSnapshot);
   const [message, setMessage] = useState<string | undefined>();
   const [pairingCode, setPairingCode] = useState(process.env.EXPO_PUBLIC_PAIRING_CODE ?? '');
@@ -182,6 +182,7 @@ export function PhoneCaptureScreen() {
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.header}>
           <View>
+            {onBack ? <Pressable onPress={onBack}><Text style={styles.back}>‹ Modes</Text></Pressable> : null}
             <Text style={styles.eyebrow}>VISION CODEF</Text>
             <Text style={styles.title}>Golden Run capture</Text>
           </View>
@@ -405,6 +406,7 @@ function isCaptureStateResponse(value: unknown): value is { state: CaptureState 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, padding: 20, justifyContent: 'space-between' },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  back: { color: '#9eb0c7', fontSize: 15, marginBottom: 8 },
   eyebrow: { color: '#73e6c3', fontSize: 12, fontWeight: '700', letterSpacing: 2 },
   title: { color: '#f6f8fb', fontSize: 25, fontWeight: '700', marginTop: 5 },
   statusDot: { width: 14, height: 14, borderRadius: 7, backgroundColor: '#536174' },

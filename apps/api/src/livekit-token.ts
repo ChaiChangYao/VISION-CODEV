@@ -12,7 +12,12 @@ export type LiveKitTokenInput = {
   workflowId: string;
   sessionId: string;
   role: LiveKitTokenRole;
+  expiresInSeconds?: number;
 };
+
+export function liveKitRoomName(input: Pick<LiveKitTokenInput, 'companyId' | 'workflowId' | 'sessionId'>): string {
+  return `company-${input.companyId}-workflow-${input.workflowId}-session-${input.sessionId}`;
+}
 
 export async function issueLiveKitToken(input: LiveKitTokenInput): Promise<{
   token: string;
@@ -27,8 +32,11 @@ export async function issueLiveKitToken(input: LiveKitTokenInput): Promise<{
     throw new Error('LiveKit server URL and credentials are required.');
   }
 
-  const roomName = `company-${input.companyId}-workflow-${input.workflowId}`;
+  // A workflow can have more than one capture or tutorial in flight. Keeping
+  // the run ID in the room prevents media or guidance crossing sessions.
+  const roomName = liveKitRoomName(input);
   const identity = `vision-codef:${input.role}:${input.companyId}:${input.memberId}:${input.sessionId}`;
+  const expiresInSeconds = input.expiresInSeconds ?? 900;
   const token = new AccessToken(apiKey, apiSecret, {
     identity,
     name:
@@ -37,7 +45,7 @@ export async function issueLiveKitToken(input: LiveKitTokenInput): Promise<{
         : input.role === 'guidance'
           ? 'Vision Codef guidance service'
           : 'Vision Codef desktop monitor',
-    ttl: '15m',
+    ttl: `${expiresInSeconds}s`,
     attributes: {
       companyId: input.companyId,
       workflowId: input.workflowId,
@@ -55,5 +63,5 @@ export async function issueLiveKitToken(input: LiveKitTokenInput): Promise<{
     canPublishData: input.role === 'publisher' || input.role === 'guidance',
   });
 
-  return { token: await token.toJwt(), roomName, serverUrl, expiresInSeconds: 900 };
+  return { token: await token.toJwt(), roomName, serverUrl, expiresInSeconds };
 }

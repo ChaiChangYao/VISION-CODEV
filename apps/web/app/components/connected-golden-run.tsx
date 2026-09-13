@@ -9,6 +9,7 @@ import { LiveKitMonitor } from './livekit-monitor';
 import { AnnotationWorkbench } from './annotation-workbench';
 import { ApplyReasoningStudio, EditReasoningStudio, TrainReasoningStudio } from './reasoning-studio-panels';
 import { SeniorReviewStudio } from './senior-review-studio';
+import { prioritizeCaptureSessions } from '../../src/lib/capture-selection';
 
 type Stage = 'train' | 'processing' | 'approve' | 'deploy';
 
@@ -17,6 +18,7 @@ export function ConnectedGoldenRun({ workflowId, stage }: { workflowId: string; 
   const [monitor, setMonitor] = useState<LiveKitMonitorView>();
   const [processing, setProcessing] = useState<ProcessingStatus>();
   const [deployment, setDeployment] = useState<DeploymentView>();
+  const [deploymentMonitor, setDeploymentMonitor] = useState<LiveKitMonitorView>();
   const [graph, setGraph] = useState<ProcedureGraph | undefined>(() => isDemoFixturesEnabled() ? demoGraph : undefined);
   const [reviewCaptures, setReviewCaptures] = useState<CaptureSessionView[]>([]);
   const [annotations, setAnnotations] = useState<ProcedureAnnotation[]>([]);
@@ -31,12 +33,18 @@ export function ConnectedGoldenRun({ workflowId, stage }: { workflowId: string; 
 
   const reportError = (value: unknown) => setError(value instanceof ApiClientError ? value.message : value instanceof Error ? value.message : String(value));
   const loadCapture = useCallback(async () => { if (!capture) return; try { setCapture(await api.getCaptureSession(capture.id)); } catch (value) { reportError(value); } }, [api, capture?.id]);
-  const loadLatestCapture = useCallback(async () => { if (isDemoFixturesEnabled()) return; try { const captures = await api.listCaptureSessions(workflowId); setReviewCaptures(captures); setCapture((current) => current ?? captures[0]); } catch (value) { reportError(value); } }, [api, workflowId]);
-  const loadProcessing = useCallback(async () => { if (isDemoFixturesEnabled()) return; try { const captures = await api.listCaptureSessions(workflowId); const latest = captures[0]; setReviewCaptures(captures); setCapture(latest); if (!latest) { setProcessing(undefined); return; } setProcessing(await api.getProcessing(latest.id)); } catch (value) { reportError(value); } }, [api, workflowId]);
+  const loadLatestCapture = useCallback(async () => { if (isDemoFixturesEnabled()) return; try { const captures = prioritizeCaptureSessions(await api.listCaptureSessions(workflowId)); setReviewCaptures(captures); setCapture((current) => current ?? captures[0]); } catch (value) { reportError(value); } }, [api, workflowId]);
+  const loadProcessing = useCallback(async () => { if (isDemoFixturesEnabled()) return; try { const captures = prioritizeCaptureSessions(await api.listCaptureSessions(workflowId)); const latest = captures[0]; setReviewCaptures(captures); setCapture(latest); if (!latest) { setProcessing(undefined); return; } setProcessing(await api.getProcessing(latest.id)); } catch (value) { reportError(value); } }, [api, workflowId]);
   const loadGraph = useCallback(async () => {
     if (isDemoFixturesEnabled()) { setGraph(demoGraph); setInstruction(demoGraph.steps[0]?.instruction ?? ''); return; }
     try {
-      const [annotationValues, captures] = await Promise.all([api.listAnnotations(workflowId), api.listCaptureSessions(workflowId)]);
+      if (stage === 'deploy') {
+        const value = await api.getProcedureGraph(workflowId);
+        setGraph(value); setInstruction(value.steps[0]?.instruction ?? '');
+        return;
+      }
+      const [annotationValues, captureValues] = await Promise.all([api.listAnnotations(workflowId), api.listCaptureSessions(workflowId)]);
+      const captures = prioritizeCaptureSessions(captureValues);
       const latest = captures[0];
       setAnnotations(annotationValues); setReviewCaptures(captures); setCapture(latest);
       if (latest?.processingStatus === 'blocked' || latest?.processingStatus === 'failed') {
@@ -53,8 +61,17 @@ export function ConnectedGoldenRun({ workflowId, stage }: { workflowId: string; 
       setGraph(value); setInstruction(value.steps[0]?.instruction ?? '');
       try { setReferencePack(await api.getReferencePack(workflowId)); } catch (value) { if (!(value instanceof ApiClientError) || value.code !== 'NOT_FOUND') throw value; }
     } catch (value) { reportError(value); }
-  }, [api, workflowId]);
+  }, [api, stage, workflowId]);
   const loadMonitor = useCallback(async () => { if (!capture) return; try { setMonitor(await api.getMonitor(capture.id)); } catch (value) { reportError(value); } }, [api, capture]);
+  const loadDeployment = useCallback(async () => {
+    if (isDemoFixturesEnabled()) return;
+    try { setDeployment(await api.getCurrentDeployment(workflowId)); }
+    catch (value) { if (!(value instanceof ApiClientError) || value.code !== 'NOT_FOUND') reportError(value); }
+  }, [api, workflowId]);
+  const loadDeploymentMonitor = useCallback(async () => {
+    if (!deployment) return;
+    try { setDeploymentMonitor(await api.getDeploymentMonitor(deployment.id)); } catch (value) { reportError(value); }
+  }, [api, deployment?.id]);
 
   useEffect(() => { if (stage === 'train') void loadLatestCapture(); }, [stage, loadLatestCapture]);
   useEffect(() => {
@@ -88,6 +105,16 @@ export function ConnectedGoldenRun({ workflowId, stage }: { workflowId: string; 
     return () => window.clearInterval(timer);
   }, [capture?.id, capture?.pairedDeviceId, capture?.state, loadCapture, stage]);
   useEffect(() => { if (stage !== 'train' || capture?.state !== 'active') { setMonitor(undefined); return; } void loadMonitor(); const timer = window.setInterval(() => void loadMonitor(), 3000); return () => window.clearInterval(timer); }, [capture?.id, capture?.state, loadMonitor, stage]);
+  useEffect(() => {
+    if (stage !== 'deploy') return;
+    void loadDeployment();
+    const timer = window.setInterval(() => void loadDeployment(), 2000);
+    return () => window.clearInterval(timer);
+  }, [loadDeployment, stage]);
+  useEffect(() => {
+    if (stage !== 'deploy' || !deployment) { setDeploymentMonitor(undefined); return; }
+    void loadDeploymentMonitor();
+  }, [deployment?.id, loadDeploymentMonitor, stage]);
 
   const createCapture = async () => { try { setError(undefined); const value = await api.createCaptureSession(workflowId); setCapture(value); setMessage(value.pairingCode ? `Capture prepared. Enter pairing code ${value.pairingCode} in the native phone build.` : 'Capture session prepared. Open the native app to pair the phone.'); } catch (value) { reportError(value); } };
   const startCapture = async () => { if (!capture?.pairedDeviceId) { setError('Claim the capture session from the native phone before starting capture.'); return; } try { setCapture(await api.startCapture(capture.id)); setMessage('Capture is active. The desktop monitor is waiting for LiveKit tracks.'); } catch (value) { reportError(value); } };
@@ -96,7 +123,7 @@ export function ConnectedGoldenRun({ workflowId, stage }: { workflowId: string; 
     setImporting(true); setError(undefined);
     try {
       if (!/\.mp4$/i.test(file.name)) throw new Error('Select an MP4 video file.');
-      if (file.size > 250 * 1024 * 1024) throw new Error('Imported videos must be 250 MB or smaller.');
+      if (file.size > 2 * 1024 * 1024 * 1024) throw new Error('Imported videos must be 2 GiB or smaller.');
       const durationMs = await readVideoDurationMs(file);
       const value = await api.importCapture(workflowId, file, durationMs);
       setCapture(value); setReviewCaptures((current) => [value, ...current.filter((item) => item.id !== value.id)]);
@@ -126,7 +153,7 @@ export function ConnectedGoldenRun({ workflowId, stage }: { workflowId: string; 
   if (stage === 'processing') return <ProcessingPanel workflowId={workflowId} capture={capture} processing={processing} message={message} error={error} />;
   if (stage === 'approve' && graph?.analysis) return <SeniorReviewStudio graph={graph} assetId={reviewCaptures[0]?.mediaAsset?.id} onChange={setGraph} onSave={async (value) => { setGraph(await api.updateProcedureGraph(workflowId, value)); }} onPublish={async (value) => { setGraph(await api.publishProcedure(workflowId, { graph: value, reviewerNote: 'Senior reviewed every action in their recording and explicitly published the procedure.' })); }} onLoadMedia={api.getMediaContent} />;
   if (stage === 'approve') { const approvedGraph = graph!; return <><Notice message={message} error={error} /><EditReasoningStudio graph={approvedGraph} captures={reviewCaptures} annotations={annotations} referencePack={referencePack} selectedStep={selectedStep} instruction={instruction} setSelectedStep={(index) => { setSelectedStep(index); setInstruction(approvedGraph.steps[index]?.instruction ?? ''); }} setInstruction={setInstruction} onPublish={publish} onSaveAnnotation={saveAnnotation} onPublishReferencePack={publishReferencePack} onLoadMedia={api.getMediaContent} /></>; }
-  if (stage === 'deploy') return <><Notice message={message} error={error} /><ApplyReasoningStudio graph={graph} deployment={deployment} onStart={startDeployment} onRecover={recover} /></>;
+  if (stage === 'deploy') return <><Notice message={message} error={error} /><ApplyReasoningStudio graph={graph} deployment={deployment} monitor={deploymentMonitor} onStart={startDeployment} onRecover={recover} /></>;
   return <><Notice message={message} error={error} /><TrainReasoningStudio capture={capture} monitor={monitor} processing={processing} importing={importing} retrying={retrying} onCreate={createCapture} onImport={importCapture} onRetryProcessing={retryProcessing} onStart={startCapture} onStop={stopCapture} onLoadMedia={api.getMediaContent} /></>;
 }
 
@@ -134,7 +161,7 @@ function Notice({ message, error }: { message?: string; error?: string }) { retu
 
 function TrainPanel({ capture, monitor, processing, importing, onCreate, onImport, onStart, onStop, message, error }: { capture?: CaptureSessionView; monitor?: LiveKitMonitorView; processing?: ProcessingStatus; importing: boolean; onCreate: () => void; onImport: (file: File) => Promise<void>; onStart: () => void; onStop: () => void; message?: string; error?: string }) {
   const active = capture?.state === 'active';
-  return <div><Notice message={message} error={error} /><div className="surface-grid"><Card className="surface-card"><div className="surface-card-header"><h2>Desktop monitor</h2><Badge tone={active ? 'green' : 'neutral'}>{active ? 'Session active' : 'Not connected'}</Badge></div><div className="surface-card-body">{monitor ? <LiveKitMonitor serverUrl={monitor.serverUrl} viewerToken={monitor.viewerToken} /> : <div className="monitor-stage" aria-label="LiveKit desktop monitor preview"><div className="monitor-grid" /><div className="monitor-placeholder"><Icon name={active ? 'video' : 'cloud-off'} size={24} /><strong>{active ? 'Waiting for phone video' : capture?.source === 'import' ? 'Video imported' : 'Create a capture session'}</strong><small>{active ? 'The API is ready for a physical phone publisher. No media is fabricated.' : capture?.source === 'import' ? capture.mediaAsset?.originalFilename ?? 'The imported capture is ready for review.' : 'The session must be prepared before the native phone can pair.'}</small></div></div>}<div className="monitor-controls">{!capture ? <Button id="train-create-session" data-interaction-id="train-create-session" variant="primary" onClick={onCreate}><Icon name="plus" size={14} /> Prepare capture</Button> : capture.state === 'preparing' ? <Button id="train-start-session" data-interaction-id="train-start-session" variant="primary" onClick={onStart} disabled={!capture.pairedDeviceId}><Icon name="play" size={14} /> {capture.pairedDeviceId ? 'Start capture' : 'Waiting for phone'}</Button> : capture.source !== 'import' ? <Button id="train-stop-session" data-interaction-id="train-stop-session" variant="danger" onClick={onStop} disabled={!active}><Icon name="stop" size={14} /> Stop and process</Button> : <Badge tone="green">Ready for review</Badge>}</div></div>{capture?.pairingCode ? <div className="pairing-instructions" role="status"><strong>Phone pairing code</strong><code>{capture.pairingCode}</code><small>{capture.pairedDeviceId ? 'Phone paired. Start capture when the phone is ready.' : 'Claim this session from the native build before starting capture.'}</small></div> : null}</Card><Card className="surface-card media-import-card"><div className="surface-card-header"><h2>Import existing video</h2><Badge tone="neutral">MP4 · max 250 MB</Badge></div><div className="surface-card-body"><p className="lede">Use an existing expert recording as review evidence. Importing does not approve steps or train a model.</p><label className={`media-import-control${importing ? ' media-import-control-disabled' : ''}`}><Icon name="upload" size={15} /> {importing ? 'Importing video…' : 'Choose MP4 video'}<input type="file" accept="video/mp4,.mp4" disabled={importing} onChange={(event) => { const file = event.currentTarget.files?.[0]; if (file) void onImport(file); event.currentTarget.value = ''; }} /></label>{capture?.source === 'import' ? <small className="media-import-result"><strong>{capture.mediaAsset?.originalFilename}</strong> · {formatBytes(capture.mediaAsset?.sizeBytes)}</small> : null}</div></Card><Card className="surface-card"><div className="surface-card-header"><h2>Processing</h2><Badge tone={processing?.status === 'completed' ? 'green' : 'neutral'}>{processing?.status ?? 'Not started'}</Badge></div><div className="surface-card-body"><div className="progress-track"><i style={{ width: `${processing?.progress ?? 0}%` }} /></div><p className="lede">{processing?.message ?? 'Imported media remains available for manual annotation even when automated processing is not configured.'}</p></div></Card></div></div>;
+  return <div><Notice message={message} error={error} /><div className="surface-grid"><Card className="surface-card"><div className="surface-card-header"><h2>Desktop monitor</h2><Badge tone={active ? 'green' : 'neutral'}>{active ? 'Session active' : 'Not connected'}</Badge></div><div className="surface-card-body">{monitor ? <LiveKitMonitor serverUrl={monitor.serverUrl} viewerToken={monitor.viewerToken} /> : <div className="monitor-stage" aria-label="LiveKit desktop monitor preview"><div className="monitor-grid" /><div className="monitor-placeholder"><Icon name={active ? 'video' : 'cloud-off'} size={24} /><strong>{active ? 'Waiting for phone video' : capture?.source === 'import' ? 'Video imported' : 'Create a capture session'}</strong><small>{active ? 'The API is ready for a physical phone publisher. No media is fabricated.' : capture?.source === 'import' ? capture.mediaAsset?.originalFilename ?? 'The imported capture is ready for review.' : 'The session must be prepared before the native phone can pair.'}</small></div></div>}<div className="monitor-controls">{!capture ? <Button id="train-create-session" data-interaction-id="train-create-session" variant="primary" onClick={onCreate}><Icon name="plus" size={14} /> Prepare capture</Button> : capture.state === 'preparing' ? <Button id="train-start-session" data-interaction-id="train-start-session" variant="primary" onClick={onStart} disabled={!capture.pairedDeviceId}><Icon name="play" size={14} /> {capture.pairedDeviceId ? 'Start capture' : 'Waiting for phone'}</Button> : capture.source !== 'import' ? <Button id="train-stop-session" data-interaction-id="train-stop-session" variant="danger" onClick={onStop} disabled={!active}><Icon name="stop" size={14} /> Stop and process</Button> : <Badge tone="green">Ready for review</Badge>}</div></div>{capture?.pairingCode ? <div className="pairing-instructions" role="status"><strong>Phone pairing code</strong><code>{capture.pairingCode}</code><small>{capture.pairedDeviceId ? 'Phone paired. Start capture when the phone is ready.' : 'Claim this session from the native build before starting capture.'}</small></div> : null}</Card><Card className="surface-card media-import-card"><div className="surface-card-header"><h2>Import existing video</h2><Badge tone="neutral">MP4 · max 2 GiB</Badge></div><div className="surface-card-body"><p className="lede">Use an existing expert recording as review evidence. Importing does not approve steps or train a model.</p><label className={`media-import-control${importing ? ' media-import-control-disabled' : ''}`}><Icon name="upload" size={15} /> {importing ? 'Importing video…' : 'Choose MP4 video'}<input type="file" accept="video/mp4,.mp4" disabled={importing} onChange={(event) => { const file = event.currentTarget.files?.[0]; if (file) void onImport(file); event.currentTarget.value = ''; }} /></label>{capture?.source === 'import' ? <small className="media-import-result"><strong>{capture.mediaAsset?.originalFilename}</strong> · {formatBytes(capture.mediaAsset?.sizeBytes)}</small> : null}</div></Card><Card className="surface-card"><div className="surface-card-header"><h2>Processing</h2><Badge tone={processing?.status === 'completed' ? 'green' : 'neutral'}>{processing?.status ?? 'Not started'}</Badge></div><div className="surface-card-body"><div className="progress-track"><i style={{ width: `${processing?.progress ?? 0}%` }} /></div><p className="lede">{processing?.message ?? 'Imported media remains available for manual annotation even when automated processing is not configured.'}</p></div></Card></div></div>;
 }
 
 function ProcessingPanel({ workflowId, capture, processing, message, error }: { workflowId: string; capture?: CaptureSessionView; processing?: ProcessingStatus; message?: string; error?: string }) {

@@ -9,7 +9,7 @@ import {
 import type { VlmContext, VlmProvider } from './vlm.js';
 
 export interface ObservationEvaluator {
-  evaluate(observation: PaperCraneObservation): Promise<GuidanceDecision>;
+  evaluate(observation: PaperCraneObservation | import('./contracts.js').TechnicianStepObservation): Promise<GuidanceDecision>;
 }
 
 export interface GuidancePublisher {

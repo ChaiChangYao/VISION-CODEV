@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { ChangeDetector } from '../src/changeDetection.js';
 import { ChangeTriggeredGuidancePipeline } from '../src/changeTriggeredPipeline.js';
-import { uncertainObservation, type FrameSample, type GuidanceMessage } from '../src/contracts.js';
+import { uncertainStepObservation, type FrameSample, type GuidanceMessage } from '../src/contracts.js';
 import type { ChangeEventEvidence } from '../src/eventVlm.js';
 
 function frame(timestampMs: number): FrameSample {
@@ -38,7 +38,7 @@ describe('ChangeTriggeredGuidancePipeline', () => {
       {
         observeEvent: vi.fn(async (event: ChangeEventEvidence) => {
           events.push(event.frames.map((sample) => sample.timestampMs));
-          return uncertainObservation(event.trigger.timestampMs);
+          return uncertainStepObservation(event.trigger.timestampMs, '11111111-1111-4111-8111-111111111111');
         }),
       },
       {
@@ -48,7 +48,7 @@ describe('ChangeTriggeredGuidancePipeline', () => {
         })),
       },
       { publish: vi.fn(async (message) => void messages.push(message)) },
-      { companyId: 'company', workflowId: 'workflow', deploymentId: 'deployment' },
+      { companyId: 'company', workflowId: 'workflow', deploymentId: 'deployment', currentStep: { id: '11111111-1111-4111-8111-111111111111', ordinal: 1, totalSteps: 1, title: 'Step', instruction: 'Do it.', observedAction: 'Done.', startState: [], expectedAction: [], endState: [], allowableVariations: [], deviationRules: [], completionCheck: '', seniorReasoning: '' } },
       { preRollMs: 1000, postRollMs: 500, maxEvidenceFrames: 3 },
     );
 

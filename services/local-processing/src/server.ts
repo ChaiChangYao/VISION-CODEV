@@ -33,6 +33,7 @@ const evidenceFramesPerEvent = 8;
 const budgetPath = join(workRoot, 'senior-api-budget.json');
 const budgetCap = Math.min(10, Number(process.env.VISION_CODEF_SENIOR_BUDGET_USD ?? 10));
 const active = new Map<string, Promise<unknown>>();
+const observationFailures = new Map<string, unknown>();
 const progress = new Map<string, { completed: number; total: number }>();
 
 const s3 = new S3Client({
@@ -312,6 +313,18 @@ async function route(request: IncomingMessage, response: ServerResponse) {
   if (endpoint === 'observations') {
     if (vision.provider === 'openai') {
       const key = `${input.companyId}/${input.captureSessionId}`;
+      // Finished artifacts survive worker/provider restarts; never bill again just
+      // because the HTTP caller disconnected before receiving the result.
+      try {
+        const saved = JSON.parse(await readFile(join(sessionDir(input), 'observations.json'), 'utf8'));
+        if (saved.pipelineVersion === ATOMIC_VERSION)
+          return send(response, 200, artifact(input, 'observations'));
+      } catch { /* Missing/incomplete artifact: resume checkpointed windows below. */ }
+      if (observationFailures.has(key)) {
+        const failure = observationFailures.get(key);
+        observationFailures.delete(key);
+        throw failure;
+      }
       let task = active.get(key);
       if (!task) {
         task = (async () => {
@@ -321,8 +334,10 @@ async function route(request: IncomingMessage, response: ServerResponse) {
           await persistJson(input, 'observations', result);
         })();
         active.set(key, task);
-        void task.finally(() => active.delete(key)).catch(() => {});
+        void task.catch((error) => observationFailures.set(key, error)).finally(() => active.delete(key));
       }
+      if (request.headers.prefer === 'respond-async')
+        return send(response, 202, { status: 'running', ...progress.get(key) });
       await task;
       return send(response, 200, artifact(input, 'observations'));
     }

@@ -3,7 +3,7 @@ import { createReadStream } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { dirname, resolve, sep } from 'node:path';
 
-export const DEFAULT_MAX_IMPORT_BYTES = 250 * 1024 * 1024;
+export const DEFAULT_MAX_IMPORT_BYTES = 2 * 1024 * 1024 * 1024;
 
 export class MediaImportError extends Error {
   public constructor(
@@ -54,7 +54,7 @@ export async function saveImportedMedia(
       if (bytesWritten > maxBytes) {
         throw new MediaImportError('MEDIA_TOO_LARGE', `Imported videos must be ${Math.floor(maxBytes / 1024 / 1024)} MB or smaller.`);
       }
-      await handle.write(chunk);
+      await handle.writeFile(chunk);
     }
     if (bytesWritten === 0) throw new MediaImportError('EMPTY_MEDIA', 'The imported video is empty.');
     return bytesWritten;

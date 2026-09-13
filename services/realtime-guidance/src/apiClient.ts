@@ -4,6 +4,7 @@ import {
   type GuidanceConnection,
   type GuidanceDecision,
   type PaperCraneObservation,
+  type TechnicianStepObservation,
 } from './contracts.js';
 
 export type GuidanceIdentity = {
@@ -35,7 +36,7 @@ export class GuidanceApiClient {
 
   async evaluate(
     observationPath: string,
-    observation: PaperCraneObservation,
+    observation: PaperCraneObservation | TechnicianStepObservation,
   ): Promise<GuidanceDecision> {
     const response = await fetch(`${this.apiBaseUrl}${observationPath}`, {
       method: 'POST',

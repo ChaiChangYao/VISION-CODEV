@@ -9,38 +9,37 @@ export type GuidanceSpeaker = {
   dispose(): Promise<void>;
 };
 
-export type StreamingGuidanceEngine = {
-  getSampleRate(): Promise<number>;
+export type GeneratedGuidanceAudio = {
+  samples: number[];
+  sampleRate: number;
+};
+
+export type LocalGuidanceEngine = {
+  generateSpeech(text: string, options?: { speed?: number }): Promise<GeneratedGuidanceAudio>;
   startPcmPlayer(sampleRate: number, channels: number): Promise<void>;
   writePcmChunk(samples: number[]): Promise<void>;
   stopPcmPlayer(): Promise<void>;
-  generateSpeechStream(
-    text: string,
-    options: { speed?: number } | undefined,
-    handlers: {
-      onChunk?: (chunk: { samples: number[]; sampleRate: number }) => void;
-      onEnd?: () => void;
-      onError?: (event: { message: string }) => void;
-    },
-  ): Promise<{ cancel(): Promise<void> }>;
-  cancelSpeechStream(): Promise<void>;
   destroy(): Promise<void>;
 };
 
+const PCM_CHUNK_SIZE = 8_192;
+
 /**
- * Keeps spoken guidance local to the phone. A newer instruction always replaces
- * an older one, so a technician never hears stale recovery advice.
+ * Keeps spoken guidance local to the phone. Speech is synthesized in one safe
+ * native call, then played through Android's PCM player. A newer instruction
+ * always replaces an older one, so stale recovery advice is never played.
  */
 export class LocalGuidanceSpeaker implements GuidanceSpeaker {
-  private engine: StreamingGuidanceEngine | undefined;
-  private initialization: Promise<StreamingGuidanceEngine> | undefined;
+  private engine: LocalGuidanceEngine | undefined;
+  private initialization: Promise<LocalGuidanceEngine> | undefined;
+  private generationTail: Promise<void> = Promise.resolve();
   private activeRequest = 0;
+  private cancelPlaybackWait: (() => void) | undefined;
   private speaking = false;
   private disposed = false;
-  private writeTail: Promise<void> = Promise.resolve();
   private readonly listeners = new Set<() => void>();
 
-  constructor(private readonly createEngine: () => Promise<StreamingGuidanceEngine>) {}
+  constructor(private readonly createEngine: () => Promise<LocalGuidanceEngine>) {}
 
   async prepare(): Promise<void> {
     await this.getEngine();
@@ -59,25 +58,29 @@ export class LocalGuidanceSpeaker implements GuidanceSpeaker {
     const engine = await this.getEngine();
     if (request !== this.activeRequest) return;
 
-    const sampleRate = await engine.getSampleRate();
-    await engine.startPcmPlayer(sampleRate, 1);
+    const audio = await this.generateInOrder(engine, message, options.speed);
+    if (request !== this.activeRequest || this.disposed) return;
+    if (!audio.samples.length || !Number.isFinite(audio.sampleRate) || audio.sampleRate <= 0) return;
+
+    const playbackStartedAt = Date.now();
+    await engine.startPcmPlayer(audio.sampleRate, 1);
     this.setSpeaking(true);
 
-    const finish = () => {
-      if (request !== this.activeRequest) return;
-      void this.writeTail.finally(() => engine.stopPcmPlayer()).finally(() => this.setSpeaking(false));
-    };
-
-    const controller = await engine.generateSpeechStream(message, { speed: options.speed }, {
-      onChunk: (chunk) => {
+    try {
+      for (let offset = 0; offset < audio.samples.length; offset += PCM_CHUNK_SIZE) {
         if (request !== this.activeRequest) return;
-        this.writeTail = this.writeTail.then(() => engine.writePcmChunk(chunk.samples));
-      },
-      onEnd: finish,
-      onError: finish,
-    });
+        await engine.writePcmChunk(audio.samples.slice(offset, offset + PCM_CHUNK_SIZE));
+      }
 
-    if (request !== this.activeRequest) await controller.cancel();
+      const audioDurationMs = (audio.samples.length / audio.sampleRate) * 1_000;
+      const remainingMs = Math.max(0, audioDurationMs - (Date.now() - playbackStartedAt));
+      await this.waitForPlayback(remainingMs + 80, request);
+    } finally {
+      if (request === this.activeRequest) {
+        await engine.stopPcmPlayer();
+        this.setSpeaking(false);
+      }
+    }
   }
 
   async interrupt(): Promise<void> {
@@ -104,7 +107,7 @@ export class LocalGuidanceSpeaker implements GuidanceSpeaker {
     await engine?.destroy();
   }
 
-  private async getEngine(): Promise<StreamingGuidanceEngine> {
+  private async getEngine(): Promise<LocalGuidanceEngine> {
     if (this.engine) return this.engine;
     this.initialization ??= this.createEngine().then((engine) => {
       this.engine = engine;
@@ -118,12 +121,47 @@ export class LocalGuidanceSpeaker implements GuidanceSpeaker {
     }
   }
 
+  private async generateInOrder(
+    engine: LocalGuidanceEngine,
+    text: string,
+    speed?: number,
+  ): Promise<GeneratedGuidanceAudio> {
+    let resolveAudio!: (audio: GeneratedGuidanceAudio) => void;
+    let rejectAudio!: (error: unknown) => void;
+    const result = new Promise<GeneratedGuidanceAudio>((resolve, reject) => {
+      resolveAudio = resolve;
+      rejectAudio = reject;
+    });
+    this.generationTail = this.generationTail
+      .catch(() => undefined)
+      .then(async () => {
+        try {
+          resolveAudio(await engine.generateSpeech(text, { speed }));
+        } catch (error) {
+          rejectAudio(error);
+        }
+      });
+    return result;
+  }
+
+  private waitForPlayback(durationMs: number, request: number): Promise<void> {
+    return new Promise((resolve) => {
+      const finish = () => {
+        clearTimeout(timer);
+        if (this.cancelPlaybackWait === finish) this.cancelPlaybackWait = undefined;
+        resolve();
+      };
+      const timer = setTimeout(finish, durationMs);
+      if (request !== this.activeRequest) finish();
+      else this.cancelPlaybackWait = finish;
+    });
+  }
+
   private async stopActiveSpeech(): Promise<void> {
+    this.cancelPlaybackWait?.();
+    this.cancelPlaybackWait = undefined;
     const engine = this.engine;
-    if (!engine) return;
-    await engine.cancelSpeechStream();
-    await this.writeTail.catch(() => undefined);
-    await engine.stopPcmPlayer();
+    if (engine) await engine.stopPcmPlayer();
     this.setSpeaking(false);
   }
 

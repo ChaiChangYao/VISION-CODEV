@@ -5,6 +5,7 @@ import {
   TrackSource,
   VideoBufferType,
   VideoStream,
+  type VideoFrameEvent,
   type RemoteParticipant,
   type RemoteTrack,
   type RemoteTrackPublication,
@@ -22,7 +23,7 @@ export type LiveKitTransportOptions = {
 
 export class LiveKitGuidanceTransport implements GuidancePublisher {
   private readonly room = new Room();
-  private readonly streams = new Set<VideoStream>();
+  private readonly streamCancellations = new Set<() => Promise<void>>();
   private onFrame: ((frame: FrameSample) => void) | undefined;
 
   constructor(private readonly options: LiveKitTransportOptions = {}) {}
@@ -53,8 +54,8 @@ export class LiveKitGuidanceTransport implements GuidancePublisher {
   }
 
   async stop(): Promise<void> {
-    for (const stream of this.streams) await stream.cancel();
-    this.streams.clear();
+    await Promise.allSettled([...this.streamCancellations].map((cancel) => cancel()));
+    this.streamCancellations.clear();
     await this.room.disconnect();
   }
 
@@ -71,14 +72,18 @@ export class LiveKitGuidanceTransport implements GuidancePublisher {
       return;
     }
     const stream = new VideoStream(track);
-    this.streams.add(stream);
-    void this.consume(stream, participant.identity).finally(() => this.streams.delete(stream));
+    const reader = stream.getReader();
+    const cancel = () => reader.cancel(undefined);
+    this.streamCancellations.add(cancel);
+    void this.consume(reader, participant.identity).finally(() => this.streamCancellations.delete(cancel));
   }
 
-  private async consume(stream: VideoStream, participantIdentity: string): Promise<void> {
+  private async consume(
+    reader: ReadableStreamDefaultReader<VideoFrameEvent>,
+    participantIdentity: string,
+  ): Promise<void> {
     let lastFrameAt = 0;
     const interval = this.options.frameIntervalMs ?? 500;
-    const reader = stream.getReader();
     try {
       while (true) {
         const result = await reader.read();

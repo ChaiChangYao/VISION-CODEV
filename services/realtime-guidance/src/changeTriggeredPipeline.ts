@@ -1,11 +1,11 @@
 import type { ChangeDetection, ChangeDetector } from './changeDetection.js';
 import {
-  PaperCraneObservationSchema,
-  uncertainObservation,
+  TechnicianStepObservationSchema,
+  uncertainStepObservation,
   type FrameSample,
   type GuidanceDecision,
   type GuidanceMessage,
-  type PaperCraneObservation,
+  type TechnicianStepObservation,
 } from './contracts.js';
 import type { ChangeEventEvidence, EventVlmProvider } from './eventVlm.js';
 import type { GuidancePublisher, ObservationEvaluator } from './pipeline.js';
@@ -124,18 +124,22 @@ export class ChangeTriggeredGuidancePipeline {
     if (event.frames.length === 0) return;
     this.options.onEvent?.(event);
 
-    let observation: PaperCraneObservation;
+    let observation: TechnicianStepObservation;
     try {
-      observation = PaperCraneObservationSchema.parse(
+      observation = TechnicianStepObservationSchema.parse(
         await this.vlm.observeEvent(event, this.context),
       );
     } catch (error) {
       this.options.onError?.(error);
-      observation = uncertainObservation(pending.trigger.timestampMs);
+      const stepId = this.context.currentStep?.id;
+      if (!stepId) return;
+      observation = uncertainStepObservation(pending.trigger.timestampMs, stepId);
     }
 
     try {
-      await this.publishDecision(await this.evaluator.evaluate(observation));
+      const decision = await this.evaluator.evaluate(observation);
+      if (decision.currentStep) this.context.currentStep = decision.currentStep;
+      await this.publishDecision(decision);
     } catch (error) {
       this.options.onError?.(error);
     }

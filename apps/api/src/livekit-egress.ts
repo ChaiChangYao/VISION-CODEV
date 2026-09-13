@@ -1,4 +1,5 @@
 import { EncodedFileOutput, EgressClient, S3Upload } from 'livekit-server-sdk';
+import { liveKitRoomName } from './livekit-token.js';
 
 export type CanonicalEgressConfig = {
   host: string;
@@ -68,7 +69,7 @@ export async function startCanonicalEgress(input: {
   });
   const client = new EgressClient(config.host, config.apiKey, config.apiSecret);
   const info = await client.startRoomCompositeEgress(
-    `company-${input.companyId}-workflow-${input.workflowId}`,
+    liveKitRoomName(input),
     output,
     { layout: 'grid' },
   );

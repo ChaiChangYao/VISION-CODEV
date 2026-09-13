@@ -27,6 +27,43 @@ const context = {
 };
 
 describe('HTTP processing provider boundary', () => {
+  it('keeps polling beyond the old five-minute connection ceiling', async () => {
+    vi.useFakeTimers();
+    try {
+      let polls = 0;
+      const fetcher = vi.fn(async () => ++polls <= 6
+        ? new Response('{"data":{"status":"running"}}', { status: 202 })
+        : new Response(JSON.stringify({ data: { ...context.media, kind: 'observations' } })));
+      const heartbeat = vi.fn();
+      const handlers = createHttpProcessingProviderHandlers({ baseUrl: 'http://localhost:8092', fetcher, heartbeat, pollIntervalMs: 60_000 });
+      const pending = handlers.extractObservations({ ...context, finalized: { ...context.media, kind: 'media' }, transcript: { ...context.media, kind: 'transcript' } });
+      await vi.advanceTimersByTimeAsync(6 * 60_000);
+      await expect(pending).resolves.toMatchObject({ kind: 'observations' });
+      expect(polls).toBe(7);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally { vi.useRealTimers(); }
+  });
+  it('polls accepted background analysis until a validated artifact is ready', async () => {
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ data: { status: 'running' } }), { status: 202 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ data: { status: 'running' } }), { status: 202 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ data: { ...context.media, kind: 'observations' } })));
+    const heartbeat = vi.fn();
+    const handlers = createHttpProcessingProviderHandlers({ baseUrl: 'http://localhost:8092', fetcher, heartbeat, pollIntervalMs: 1 });
+    const media = { ...context.media, kind: 'media' as const };
+    await expect(handlers.extractObservations({ ...context, finalized: media, transcript: { ...context.media, kind: 'transcript' } })).resolves.toMatchObject({ kind: 'observations' });
+    expect(fetcher).toHaveBeenCalledTimes(3);
+    expect(fetcher.mock.calls[0]![1].headers.prefer).toBe('respond-async');
+    expect(heartbeat).toHaveBeenCalledWith({ endpoint: 'observations', state: 'polling-background-job' });
+  });
+
+  it('surfaces a background job failure instead of treating acceptance as completion', async () => {
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(new Response('{}', { status: 202 }))
+      .mockResolvedValueOnce(new Response('analysis failed', { status: 500 }));
+    const handlers = createHttpProcessingProviderHandlers({ baseUrl: 'http://localhost:8092', fetcher, pollIntervalMs: 1 });
+    await expect(handlers.extractObservations({ ...context, finalized: { ...context.media, kind: 'media' }, transcript: { ...context.media, kind: 'transcript' } })).rejects.toThrow('analysis failed');
+  });
   it('sends only bounded references and validates the returned artifact', async () => {
     const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       expect(String(input)).toBe('https://processing.example.test/v1/processing/finalize');

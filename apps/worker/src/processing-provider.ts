@@ -12,6 +12,7 @@ export type ProcessingProviderClientOptions = {
   fetcher?: typeof fetch;
   heartbeat?: (details?: unknown) => void;
   reportProgress?: ReturnType<typeof configuredProcessingProgressSink>;
+  pollIntervalMs?: number;
 };
 
 export class InvalidMediaReferenceError extends Error {}
@@ -50,15 +51,24 @@ export function createHttpProcessingProviderHandlers(options: ProcessingProvider
     }, 10_000) : undefined;
     let response: Response;
     try {
+      const deadline = Date.now() + 55 * 60_000;
+      do {
       response = await fetcher(`${baseUrl}/v1/processing/${endpoint}`, {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
           'idempotency-key': input.idempotencyKey,
+          ...(endpoint === 'observations' ? { prefer: 'respond-async' } : {}),
         },
         body: JSON.stringify(input),
-        signal: AbortSignal.timeout(55 * 60_000),
+        signal: AbortSignal.timeout(endpoint === 'observations' ? 30_000 : 55 * 60_000),
       });
+      if (response.status !== 202) break;
+      await response.arrayBuffer(); // Release each short-lived HTTP connection.
+      if (Date.now() >= deadline) throw new ProcessingProviderUnavailableError('Analysis polling deadline exceeded; completed windows are preserved.');
+      options.heartbeat?.({ endpoint, state: 'polling-background-job' });
+      await new Promise((resolve) => setTimeout(resolve, options.pollIntervalMs ?? 2000));
+      } while (true);
     } finally {
       if (heartbeatTimer) clearInterval(heartbeatTimer);
       if (progressTimer) clearInterval(progressTimer);

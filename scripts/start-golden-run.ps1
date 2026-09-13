@@ -74,6 +74,8 @@ if (-not $SkipBuild) {
   if ($LASTEXITCODE) { throw 'Worker build failed.' }
   pnpm --filter @vision-codef/local-processing build
   if ($LASTEXITCODE) { throw 'Local processing build failed.' }
+  pnpm --filter @vision-codef/realtime-guidance build
+  if ($LASTEXITCODE) { throw 'Realtime guidance build failed.' }
   $webBuildOutput = Join-Path $projectRoot 'apps/web/.next'
   $webRoot = (Resolve-Path -LiteralPath (Join-Path $projectRoot 'apps/web')).Path
   if (Test-Path -LiteralPath $webBuildOutput) {

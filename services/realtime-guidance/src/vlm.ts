@@ -8,6 +8,7 @@ export type VlmContext = {
   companyId: string;
   workflowId: string;
   deploymentId: string;
+  currentStep?: import('./contracts.js').ApprovedStepContext;
 };
 
 export interface VlmProvider {

@@ -28,7 +28,7 @@ describe('issueLiveKitToken', () => {
     });
 
     expect(result.token.length).toBeGreaterThan(20);
-    expect(result.roomName).toBe('company-00000000-0000-7000-8000-000000000001-workflow-00000000-0000-7000-8000-000000000003');
+    expect(result.roomName).toBe('company-00000000-0000-7000-8000-000000000001-workflow-00000000-0000-7000-8000-000000000003-session-00000000-0000-7000-8000-000000000004');
     expect(result.serverUrl).toBe('ws://livekit.test');
     expect(result.expiresInSeconds).toBe(900);
     expect(jwtPayload(result.token).video).toMatchObject({ canPublish: true, canSubscribe: true });

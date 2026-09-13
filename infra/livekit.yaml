@@ -4,6 +4,12 @@ bind_addresses:
 rtc:
   tcp_port: 7881
   udp_port: 7882
+  # Docker sees only its bridge address by default, which is unreachable from a
+  # phone on the laptop's Wi-Fi. Advertise the host's LAN address for WebRTC
+  # while retaining the bridge candidate for containerized Egress.
+  node_ip: 192.168.0.5
+  use_external_ip: false
+  advertise_internal_ip: true
 redis:
   address: redis:6379
 keys:

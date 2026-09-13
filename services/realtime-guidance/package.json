@@ -8,6 +8,7 @@
     "dev": "node --conditions=development --import=tsx/esm src/main.ts",
     "start": "node dist/main.js",
     "smoke:detector": "tsx scripts/smoke-detector.ts",
+    "smoke:tutorial": "tsx scripts/verify-tutorial-livekit.ts",
     "typecheck": "tsc --noEmit -p tsconfig.typecheck.json",
     "lint": "tsc --noEmit -p tsconfig.typecheck.json",
     "test": "vitest run"

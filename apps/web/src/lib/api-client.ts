@@ -117,6 +117,9 @@ export type DeploymentView = {
   totalSteps: number;
   currentInstruction?: string;
   voiceState?: 'closed' | 'listening' | 'speaking' | 'interrupted' | 'muted' | 'error';
+  pairingCode?: string;
+  pairingExpiresAt?: string;
+  pairedDeviceId?: string;
   intervention?: {
     title: string;
     detail: string;
@@ -164,7 +167,9 @@ export type WorkflowApi = {
   getReferencePack(workflowId: string): Promise<WorkflowReferencePack>;
   publishReferencePack(workflowId: string): Promise<WorkflowReferencePack>;
   startDeployment(workflowId: string): Promise<DeploymentView>;
+  getCurrentDeployment(workflowId: string): Promise<DeploymentView>;
   getDeployment(deploymentId: string): Promise<DeploymentView>;
+  getDeploymentMonitor(deploymentId: string): Promise<LiveKitMonitor>;
   requestRecovery(deploymentId: string, recoveryStepId: string): Promise<DeploymentView>;
   observeDeployment(deploymentId: string, observation: PaperCraneObservation): Promise<DeploymentView & { decision: string; decisionReason: string }>;
   transitionVoice(deploymentId: string, event: VoiceEventInput): Promise<DeploymentView>;
@@ -268,6 +273,9 @@ function normalizeDeployment(value: unknown): DeploymentView {
     totalSteps: Number(input.totalSteps ?? input.total_steps ?? 0),
     currentInstruction: input.currentInstruction ? String(input.currentInstruction) : undefined,
     voiceState: input.voiceState ? String(input.voiceState) as DeploymentView['voiceState'] : undefined,
+    pairingCode: input.pairingCode ? String(input.pairingCode) : undefined,
+    pairingExpiresAt: input.pairingExpiresAt ? String(input.pairingExpiresAt) : undefined,
+    pairedDeviceId: input.pairedDeviceId ? String(input.pairedDeviceId) : undefined,
     intervention: intervention.title
       ? {
           title: String(intervention.title),
@@ -443,8 +451,14 @@ export function createApiClient(config: ApiClientConfig = {}): WorkflowApi {
     async startDeployment(workflowId) {
       return normalizeDeployment(await request(`/v1/workflows/${workflowId}/deployments`, { method: 'POST' }));
     },
+    async getCurrentDeployment(workflowId) {
+      return normalizeDeployment(await request(`/v1/workflows/${workflowId}/deployments/current`));
+    },
     async getDeployment(deploymentId) {
       return normalizeDeployment(await request(`/v1/deployments/${deploymentId}`));
+    },
+    async getDeploymentMonitor(deploymentId) {
+      return normalizeMonitor(await request(`/v1/deployments/${deploymentId}/monitor`));
     },
     async requestRecovery(deploymentId, recoveryStepId) {
       return normalizeDeployment(await request(`/v1/deployments/${deploymentId}/recovery`, {

@@ -10,6 +10,7 @@ import { ChangeTriggeredGuidancePipeline } from './changeTriggeredPipeline.js';
 import { uncertainObservation } from './contracts.js';
 import {
   HttpEventVlmProvider,
+  OpenAiEventVlmProvider,
   SingleFrameEventVlmProvider,
   type EventVlmProvider,
 } from './eventVlm.js';
@@ -48,7 +49,7 @@ async function main(): Promise<void> {
         createEventProvider(provider),
         evaluator,
         transport,
-        identity,
+        { ...identity, currentStep: connection.currentStep },
         {
           preRollMs: nonnegativeInteger(process.env.VISION_CODEF_CHANGE_PRE_ROLL_MS, 2000),
           postRollMs: nonnegativeInteger(process.env.VISION_CODEF_CHANGE_POST_ROLL_MS, 1000),
@@ -85,13 +86,14 @@ function createProvider(): VlmProvider {
 
 function createEventProvider(fallback: VlmProvider): EventVlmProvider {
   const endpoint = process.env.VISION_CODEF_EVENT_VLM_ENDPOINT?.trim();
-  return endpoint
-    ? new HttpEventVlmProvider(endpoint, process.env.VISION_CODEF_EVENT_VLM_BEARER_TOKEN)
-    : new SingleFrameEventVlmProvider(fallback);
+  if (endpoint) return new HttpEventVlmProvider(endpoint, process.env.VISION_CODEF_EVENT_VLM_BEARER_TOKEN);
+  const openAiKey = process.env.OPENAI_API_KEY?.trim();
+  if (openAiKey) return new OpenAiEventVlmProvider(openAiKey, process.env.VISION_CODEF_GUIDANCE_MODEL?.trim() || 'gpt-5-mini');
+  return new SingleFrameEventVlmProvider(fallback);
 }
 
 function createChangeDetector(streamId: string): ChangeDetector | undefined {
-  const mode = process.env.VISION_CODEF_CHANGE_DETECTOR?.trim().toLowerCase() ?? 'disabled';
+  const mode = process.env.VISION_CODEF_CHANGE_DETECTOR?.trim().toLowerCase() ?? (process.env.OPENAI_API_KEY ? 'frame-difference' : 'disabled');
   if (mode === 'disabled') return undefined;
   if (mode === 'frame-difference') {
     return new FrameDifferenceDetector({

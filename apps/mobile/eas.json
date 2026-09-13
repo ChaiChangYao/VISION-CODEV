@@ -11,10 +11,24 @@
     "preview": {
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_LOCAL_LAN_TEST": "true"
+        "EXPO_PUBLIC_LOCAL_LAN_TEST": "true",
+        "EXPO_PUBLIC_API_BASE_URL": "http://192.168.0.198:4000",
+        "EXPO_PUBLIC_LIVEKIT_URL": "ws://192.168.0.198:7880",
+        "EXPO_PUBLIC_CAPTURE_TOKEN_ENDPOINT": "http://192.168.0.198:4000/v1/capture-token",
+        "EXPO_PUBLIC_CAPTURE_PAIRING_ENDPOINT": "http://192.168.0.198:4000/v1/capture-pairings/claim",
+        "EXPO_PUBLIC_COMPANY_ID": "00000000-0000-7000-8000-000000000001",
+        "EXPO_PUBLIC_MEMBER_ID": "00000000-0000-4000-8000-000000000002",
+        "EXPO_PUBLIC_DEVICE_ID": "vision-codef-phone",
+        "EXPO_PUBLIC_TTS_MODEL_PATH": "asset:models/vits-piper-en_US-amy-low"
       },
       "android": {
         "buildType": "apk"
+      }
+    },
+    "preview-emulator": {
+      "extends": "preview",
+      "env": {
+        "EXPO_PUBLIC_ANDROID_BUILD_ARCH": "x86"
       }
     },
     "production": {}
