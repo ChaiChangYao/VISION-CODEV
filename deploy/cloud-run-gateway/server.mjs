@@ -64,6 +64,10 @@ async function analyze(input) {
   if (!process.env.OPENAI_API_KEY) throw new Error('Vision analysis is not configured.');
   if (typeof input.imageDataUrl !== 'string' || !input.imageDataUrl.startsWith('data:image/jpeg;base64,')) throw new Error('A JPEG camera frame is required.');
   const expectedStep = String(input.expectedStep || '').slice(0, 500);
+  const cleanInspection = /clear|clean|interior|print bed|bed is empty/i.test(expectedStep);
+  const criteria = cleanInspection
+    ? 'This is a visual cleanliness/clearance inspection. Mark aligned only if the printer interior and print bed are sufficiently visible and clearly empty, unobstructed, and free of loose filament, scraps, residue, or other debris. A hand, tool, object, shadow, glare, or cropped/blurred view is not proof of cleanliness. If any required area is hidden or cleanliness cannot be verified, mark uncertain. Mark mistake only when visible debris, residue, or an obstruction is present.'
+    : 'Judge whether the visible state satisfies the approved step. Mark aligned only when the required result is visibly demonstrated; do not infer completion from a hand gesture or intention. If the relevant area is hidden or ambiguous, mark uncertain.';
   const response = await fetch('https://api.openai.com/v1/responses', {
     method: 'POST',
     headers: { authorization: `Bearer ${process.env.OPENAI_API_KEY}`, 'content-type': 'application/json' },
@@ -71,10 +75,10 @@ async function analyze(input) {
       model,
       store: false,
       max_output_tokens: 180,
-      instructions: 'You assess a first-person technician camera frame against one approved procedure step. Describe only visible evidence. If uncertain or occluded, say uncertain. Never invent completion. Guidance must be one brief spoken sentence.',
+      instructions: `You are a strict visual quality inspector for a first-person technician camera. Assess the visible state against one approved procedure step, not merely the motion being performed. ${criteria} Describe only visible evidence. Never invent completion. Guidance must be one brief spoken sentence that tells the technician what to show, check, or correct.`,
       input: [{ role: 'user', content: [
-        { type: 'input_text', text: `Approved current step: ${expectedStep}` },
-        { type: 'input_image', image_url: input.imageDataUrl, detail: 'low' },
+        { type: 'input_text', text: `Approved current step: ${expectedStep}\nInspection rule: ${criteria}` },
+        { type: 'input_image', image_url: input.imageDataUrl, detail: cleanInspection ? 'high' : 'low' },
       ] }],
       text: { format: { type: 'json_schema', name: 'technician_observation', strict: true, schema: {
         type: 'object', additionalProperties: false,
