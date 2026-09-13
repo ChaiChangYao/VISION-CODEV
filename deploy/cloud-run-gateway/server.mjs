@@ -17,6 +17,7 @@ const procedures = {
     ],
   },
 };
+const procedureStore = new Map(Object.entries(procedures));
 
 function json(response, status, value) {
   response.writeHead(status, {
@@ -99,12 +100,58 @@ async function analyze(input) {
   return JSON.parse(outputText(result));
 }
 
+function procedureFromInput(input) {
+  const steps = Array.isArray(input?.steps) ? input.steps : [];
+  if (!steps.length || steps.length > 100) throw new Error('A golden run must contain between 1 and 100 steps.');
+  const normalized = steps.map((step) => {
+    if (typeof step === 'string') return { instruction: step.slice(0, 500), expectedAction: '', endState: '', completionCheck: '' };
+    if (!step || typeof step !== 'object') throw new Error('Each golden-run step must be text or an object.');
+    return {
+      instruction: String(step.instruction || step.title || '').slice(0, 500),
+      expectedAction: String(step.expectedAction || step.observedAction || '').slice(0, 500),
+      endState: String(step.endState || step.evidence || '').slice(0, 500),
+      completionCheck: String(step.completionCheck || step.evidence || '').slice(0, 500),
+    };
+  });
+  if (normalized.some((step) => !step.instruction)) throw new Error('Every golden-run step needs an instruction.');
+  return { id: String(input.id || crypto.randomUUID()).slice(0, 120), title: String(input.title || 'Golden run').slice(0, 200), steps: normalized };
+}
+
+async function createLiveCall(input) {
+  if (!process.env.OPENAI_API_KEY) throw new Error('Live voice is not configured.');
+  if (typeof input?.sdp !== 'string' || input.sdp.length < 100) throw new Error('A WebRTC offer is required.');
+  const instructions = String(input.instructions || '').slice(0, 4000);
+  const response = await fetch('https://api.openai.com/v1/realtime/calls', {
+    method: 'POST',
+    headers: { authorization: `Bearer ${process.env.OPENAI_API_KEY}`, 'content-type': 'application/json', accept: 'application/sdp' },
+    body: JSON.stringify({ sdp: input.sdp, session: { type: 'realtime', model: 'gpt-live-1', instructions } }),
+    signal: AbortSignal.timeout(30_000),
+  });
+  const answer = await response.text();
+  if (!response.ok) throw new Error(answer.slice(0, 500) || `Live voice request failed (${response.status}).`);
+  return { sdp: answer };
+}
+
 createServer(async (request, response) => {
   const url = new URL(request.url || '/', 'http://localhost');
   if (!originAllowed(request)) return json(response, 403, { error: 'This origin is not allowed.' });
   if (request.method === 'OPTIONS') return json(response, 204, {});
   if (request.method === 'GET' && url.pathname === '/health') return json(response, 200, { status: 'ok', service: 'vision-codef-gateway' });
   if (request.method === 'GET' && url.pathname === '/v1/procedures') return json(response, 200, procedures);
+  if (request.method === 'GET' && url.pathname.startsWith('/v1/procedures/')) {
+    const procedure = procedureStore.get(decodeURIComponent(url.pathname.slice('/v1/procedures/'.length)));
+    return procedure ? json(response, 200, procedure) : json(response, 404, { error: 'Golden run was not found.' });
+  }
+  if (request.method === 'POST' && url.pathname === '/v1/procedures') {
+    if (!withinRateLimit(request)) return json(response, 429, { error: 'Too many requests. Wait one minute and try again.' });
+    try { const procedure = procedureFromInput(await body(request)); procedureStore.set(procedure.id, procedure); return json(response, 201, procedure); }
+    catch (error) { return json(response, 400, { error: error instanceof Error ? error.message : 'Golden run could not be saved.' }); }
+  }
+  if (request.method === 'POST' && url.pathname === '/v1/live-call') {
+    if (!withinRateLimit(request)) return json(response, 429, { error: 'Too many requests. Wait one minute and try again.' });
+    try { return json(response, 200, await createLiveCall(await body(request))); }
+    catch (error) { return json(response, 400, { error: error instanceof Error ? error.message : 'Live voice could not start.' }); }
+  }
   if (request.method === 'POST' && url.pathname === '/v1/analyze-frame') {
     if (!withinRateLimit(request)) return json(response, 429, { error: 'Too many checks. Wait one minute and try again.' });
     try { return json(response, 200, await analyze(await body(request))); }

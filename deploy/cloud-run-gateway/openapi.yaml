@@ -35,3 +35,21 @@ paths:
         '200': { description: Frame assessment }
         '400': { description: Invalid frame or analysis failure }
         '429': { description: Rate limited }
+  /v1/procedures:
+    post:
+      operationId: createProcedure
+      responses:
+        '201': { description: Golden run saved }
+  /v1/procedures/{procedureId}:
+    parameters:
+      - { name: procedureId, in: path, required: true, type: string }
+    get:
+      operationId: getProcedure
+      responses:
+        '200': { description: Golden run }
+        '404': { description: Not found }
+  /v1/live-call:
+    post:
+      operationId: createLiveCall
+      responses:
+        '200': { description: WebRTC SDP answer }
