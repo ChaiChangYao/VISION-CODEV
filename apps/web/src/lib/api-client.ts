@@ -150,6 +150,8 @@ export type WorkflowApi = {
   listWorkflows(): Promise<WorkflowSummary[]>;
   createCaptureSession(workflowId: string): Promise<CaptureSessionView>;
   importCapture(workflowId: string, file: File, durationMs?: number): Promise<CaptureSessionView>;
+  listPresetVideos(): Promise<Array<{ id: string; title: string; available: boolean; sizeBytes?: number }>>;
+  importPreset(workflowId: string, presetId: string): Promise<CaptureSessionView>;
   listCaptureSessions(workflowId: string): Promise<CaptureSessionView[]>;
   getCaptureSession(sessionId: string): Promise<CaptureSessionView>;
   startCapture(sessionId: string): Promise<CaptureSessionView>;
@@ -386,6 +388,10 @@ export function createApiClient(config: ApiClientConfig = {}): WorkflowApi {
         headers: { 'content-type': file.type || 'video/mp4' },
         body: file,
       }));
+    },
+    async listPresetVideos() { return request('/v1/preset-videos'); },
+    async importPreset(workflowId, presetId) {
+      return normalizeCapture(await request(`/v1/workflows/${workflowId}/capture-sessions/preset`, { method: 'POST', body: JSON.stringify({ presetId }) }));
     },
     async listCaptureSessions(workflowId) {
       const values = await request<unknown>(`/v1/workflows/${workflowId}/capture-sessions`);

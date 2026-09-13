@@ -6,6 +6,7 @@ import type { ProcedureAnnotation, ProcedureAnnotationInput, ProcedureGraph, Wor
 import type { CaptureSessionView, DeploymentView, LiveKitMonitor as LiveKitMonitorView, ProcessingStatus } from '../../src/lib/api-client';
 import { LiveKitMonitor } from './livekit-monitor';
 import { AnnotationWorkbench } from './annotation-workbench';
+import { PresetVideoPicker } from './preset-video-picker';
 
 type TrainProps = {
   capture?: CaptureSessionView;
@@ -15,13 +16,14 @@ type TrainProps = {
   retrying: boolean;
   onCreate: () => void;
   onImport: (file: File) => Promise<void>;
+  onPreset: (id: string) => Promise<void>;
   onRetryProcessing: () => Promise<void>;
   onStart: () => void;
   onStop: () => void;
   onLoadMedia: (assetId: string) => Promise<Blob>;
 };
 
-export function TrainReasoningStudio({ capture, monitor, processing, importing, retrying, onCreate, onImport, onRetryProcessing, onStart, onStop, onLoadMedia }: TrainProps) {
+export function TrainReasoningStudio({ capture, monitor, processing, importing, retrying, onCreate, onImport, onPreset, onRetryProcessing, onStart, onStop, onLoadMedia }: TrainProps) {
   const active = capture?.state === 'active';
   const imported = capture?.source === 'import';
   const processingImport = imported && !['completed', 'blocked', 'failed'].includes(processing?.status ?? 'queued');
@@ -76,6 +78,7 @@ export function TrainReasoningStudio({ capture, monitor, processing, importing, 
           {!capture ? <Button variant="primary" onClick={onCreate}><Icon name="video" size={14} /> Prepare phone capture</Button> : capture.state === 'preparing' ? <Button variant="primary" onClick={onStart} disabled={!capture.pairedDeviceId}><Icon name="play" size={14} />{capture.pairedDeviceId ? 'Start recording' : 'Waiting for phone'}</Button> : active ? <Button variant="danger" onClick={onStop}><Icon name="stop" size={14} /> Stop and process</Button> : capture.source === 'phone' ? <Button variant="primary" onClick={onCreate}><Icon name="video" size={14} /> Prepare another capture</Button> : <Badge tone={importFailed ? 'red' : processingImport ? 'amber' : 'green'}>{importStatus}</Badge>}
           <label className={`studio-import-button${importing || processingImport ? ' disabled' : ''}`}><Icon name="upload" size={14} />{importing ? 'Uploading MP4…' : processingImport ? 'Processing MP4…' : 'Upload & process MP4'}<input type="file" accept="video/mp4,.mp4" disabled={importing || processingImport} onChange={(event) => { const file = event.currentTarget.files?.[0]; if (file) void onImport(file); event.currentTarget.value = ''; }} /></label>
         </div>
+        <PresetVideoPicker disabled={importing || processingImport || active || capture?.state === 'finalizing'} onSelect={onPreset} />
       </aside>
     </div>
   );

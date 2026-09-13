@@ -20,6 +20,7 @@ import { createConfiguredRuntimePersistence } from './runtime-persistence.js';
 import { authenticateRequest } from './auth.js';
 import { buildReferencePack } from './reference-pack.js';
 import { DEFAULT_MAX_IMPORT_BYTES, importedMediaPath, localMediaRoot, MediaImportError, saveImportedMedia, sha256File } from './local-media.js';
+import { findPresetVideo, listPresetVideos } from './preset-videos.js';
 import { parseTenantContext, TenantContextError } from './tenant-context.js';
 import { verifyGuidanceServiceBearer } from './guidance-auth.js';
 import { classifyWorkflowIntent, resolveWorkflowIntent } from './workflow-intent.js';
@@ -281,6 +282,8 @@ async function route(request: IncomingMessage, response: ServerResponse) {
   const headerTenant = parseTenantContext(request.headers); let tenant; try { tenant = authenticateRequest(request.headers, headerTenant); } catch (error) { throw new HttpError(401, 'UNAUTHENTICATED', error instanceof Error ? error.message : 'Request authentication failed.'); } const { companyId, memberId } = tenant; if (!membershipDirectory.has(tenant)) throw new HttpError(403, 'FORBIDDEN', 'The authenticated member is not a member of this company.');
   const parts = path.split('/').filter(Boolean).slice(1);
   const isMediaImport = parts[0] === 'workflows' && parts[2] === 'capture-sessions' && parts[3] === 'import' && parts.length === 4 && method === 'POST';
+  const isPresetImport = parts[0] === 'workflows' && parts[2] === 'capture-sessions' && parts[3] === 'preset' && parts.length === 4 && method === 'POST';
+  if (parts[0] === 'preset-videos' && parts.length === 1 && method === 'GET') { send(response, 200, await listPresetVideos(), traceId); return; }
   const payload = ['POST', 'PATCH', 'PUT'].includes(method) && !isMediaImport ? await readJson(request) : {};
   if (parts[0] === 'workflows' && parts[2] === 'procedure-graph' && (method === 'PATCH' || method === 'POST')) {
     const existing = getWorkflow(parts[1]!, companyId).graph;
@@ -326,11 +329,13 @@ async function route(request: IncomingMessage, response: ServerResponse) {
     event(companyId, 'deployment.paired', { deviceId }, deployment.workflowId, undefined, deployment.id);
     send(response, 200, { deploymentId: deployment.id, workflowId: deployment.workflowId, deviceId, roomName: liveKitRoomName({ companyId, workflowId: deployment.workflowId, sessionId: deployment.id }) }, traceId); return;
   }
-  if (isMediaImport) {
+  if (isMediaImport || isPresetImport) {
     const workflow = getWorkflow(parts[1]!, companyId);
     if (workflow.family !== 'golden_run') throw new HttpError(409, 'CONFLICT', 'Only Golden Run workflows can import captured media.');
-    const originalFilename = url.searchParams.get('filename')?.trim() ?? '';
-    const contentType = String(request.headers['content-type'] ?? '').split(';')[0]!.trim().toLowerCase();
+    const preset = isPresetImport ? await findPresetVideo(String(payload.presetId ?? '')) : undefined;
+    if (isPresetImport && !preset) throw new HttpError(404, 'NOT_FOUND', 'This sample video is not available on the server.');
+    const originalFilename = preset?.filename ?? url.searchParams.get('filename')?.trim() ?? '';
+    const contentType = preset ? 'video/mp4' : String(request.headers['content-type'] ?? '').split(';')[0]!.trim().toLowerCase();
     if (!originalFilename || !/\.mp4$/i.test(originalFilename) || (contentType !== 'video/mp4' && contentType !== 'application/octet-stream')) throw new HttpError(400, 'VALIDATION_FAILED', 'Select an MP4 video file.');
     const declaredBytes = Number(request.headers['content-length'] ?? 0);
     if (Number.isFinite(declaredBytes) && declaredBytes > maxImportBytes) throw new HttpError(413, 'MEDIA_TOO_LARGE', `Imported videos must be ${Math.floor(maxImportBytes / 1024 / 1024)} MB or smaller.`);
@@ -339,7 +344,7 @@ async function route(request: IncomingMessage, response: ServerResponse) {
     const durationMs = Number.isFinite(durationValue) && durationValue > 0 ? Math.round(durationValue) : undefined;
     const target = importedMediaPath(localMediaRoot(), companyId, captureId, assetId);
     let sizeBytes: number;
-    try { sizeBytes = await saveImportedMedia(request, target, maxImportBytes); } catch (error) { if (error instanceof MediaImportError) throw new HttpError(error.code === 'MEDIA_TOO_LARGE' ? 413 : 400, error.code, error.message); throw error; }
+    try { sizeBytes = await saveImportedMedia(preset ? createReadStream(preset.path) : request, target, maxImportBytes); } catch (error) { if (error instanceof MediaImportError) throw new HttpError(error.code === 'MEDIA_TOO_LARGE' ? 413 : 400, error.code, error.message); throw error; }
     const sha256 = await sha256File(target);
     const objectKey = `companies/${companyId}/captures/${captureId}/imports/${assetId}.mp4`;
     const asset: MediaAsset = { id: assetId, companyId, captureSessionId: captureId, state: 'available', objectKey, storageKind: 'local_import', originalFilename, contentType: 'video/mp4', sizeBytes, sha256, localPath: target };

@@ -32,6 +32,15 @@ export function ConnectedGoldenRun({ workflowId, stage }: { workflowId: string; 
   const api = useMemo(() => getApiClient(), []);
 
   const reportError = (value: unknown) => setError(value instanceof ApiClientError ? value.message : value instanceof Error ? value.message : String(value));
+  const importPreset = async (presetId: string) => {
+    if (importing) return;
+    setImporting(true); setError(undefined); setMessage(undefined);
+    try {
+      const value = await api.importPreset(workflowId, presetId);
+      setCapture(value); setMonitor(undefined); setProcessing(undefined);
+      setMessage('Sample video added. Processing will create a draft for senior review.');
+    } catch (value) { reportError(value); } finally { setImporting(false); }
+  };
   const loadCapture = useCallback(async () => { if (!capture) return; try { setCapture(await api.getCaptureSession(capture.id)); } catch (value) { reportError(value); } }, [api, capture?.id]);
   const loadLatestCapture = useCallback(async () => { if (isDemoFixturesEnabled()) return; try { const captures = prioritizeCaptureSessions(await api.listCaptureSessions(workflowId)); setReviewCaptures(captures); setCapture((current) => current ?? captures[0]); } catch (value) { reportError(value); } }, [api, workflowId]);
   const loadProcessing = useCallback(async () => { if (isDemoFixturesEnabled()) return; try { const captures = prioritizeCaptureSessions(await api.listCaptureSessions(workflowId)); const latest = captures[0]; setReviewCaptures(captures); setCapture(latest); if (!latest) { setProcessing(undefined); return; } setProcessing(await api.getProcessing(latest.id)); } catch (value) { reportError(value); } }, [api, workflowId]);
@@ -154,7 +163,7 @@ export function ConnectedGoldenRun({ workflowId, stage }: { workflowId: string; 
   if (stage === 'approve' && graph?.analysis) return <SeniorReviewStudio graph={graph} assetId={reviewCaptures[0]?.mediaAsset?.id} onChange={setGraph} onSave={async (value) => { setGraph(await api.updateProcedureGraph(workflowId, value)); }} onPublish={async (value) => { setGraph(await api.publishProcedure(workflowId, { graph: value, reviewerNote: 'Senior reviewed every action in their recording and explicitly published the procedure.' })); }} onLoadMedia={api.getMediaContent} />;
   if (stage === 'approve') { const approvedGraph = graph!; return <><Notice message={message} error={error} /><EditReasoningStudio graph={approvedGraph} captures={reviewCaptures} annotations={annotations} referencePack={referencePack} selectedStep={selectedStep} instruction={instruction} setSelectedStep={(index) => { setSelectedStep(index); setInstruction(approvedGraph.steps[index]?.instruction ?? ''); }} setInstruction={setInstruction} onPublish={publish} onSaveAnnotation={saveAnnotation} onPublishReferencePack={publishReferencePack} onLoadMedia={api.getMediaContent} /></>; }
   if (stage === 'deploy') return <><Notice message={message} error={error} /><ApplyReasoningStudio graph={graph} deployment={deployment} monitor={deploymentMonitor} onStart={startDeployment} onRecover={recover} /></>;
-  return <><Notice message={message} error={error} /><TrainReasoningStudio capture={capture} monitor={monitor} processing={processing} importing={importing} retrying={retrying} onCreate={createCapture} onImport={importCapture} onRetryProcessing={retryProcessing} onStart={startCapture} onStop={stopCapture} onLoadMedia={api.getMediaContent} /></>;
+  return <><Notice message={message} error={error} /><TrainReasoningStudio capture={capture} monitor={monitor} processing={processing} importing={importing} retrying={retrying} onCreate={createCapture} onImport={importCapture} onPreset={importPreset} onRetryProcessing={retryProcessing} onStart={startCapture} onStop={stopCapture} onLoadMedia={api.getMediaContent} /></>;
 }
 
 function Notice({ message, error }: { message?: string; error?: string }) { return <>{error ? <StateNotice tone="red" icon="info" title="Action could not complete">{error}</StateNotice> : null}{message ? <StateNotice tone="green" icon="check" title="Updated">{message}</StateNotice> : null}</>; }
