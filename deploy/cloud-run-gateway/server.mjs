@@ -121,15 +121,15 @@ async function createLiveCall(input) {
   if (!process.env.OPENAI_API_KEY) throw new Error('Live voice is not configured.');
   if (typeof input?.sdp !== 'string' || input.sdp.length < 100) throw new Error('A WebRTC offer is required.');
   const instructions = String(input.instructions || '').slice(0, 4000);
-  const response = await fetch('https://api.openai.com/v1/realtime/calls', {
+  const response = await fetch('https://api.openai.com/v1/live/sessions', {
     method: 'POST',
     headers: { authorization: `Bearer ${process.env.OPENAI_API_KEY}`, 'content-type': 'application/json', accept: 'application/sdp' },
-    body: JSON.stringify({ sdp: input.sdp, session: { type: 'realtime', model: 'gpt-live-1', instructions } }),
+    body: JSON.stringify({ session: { model: 'gpt-live-1', instructions }, transport: { type: 'webrtc', sdp: input.sdp } }),
     signal: AbortSignal.timeout(30_000),
   });
-  const answer = await response.text();
-  if (!response.ok) throw new Error(answer.slice(0, 500) || `Live voice request failed (${response.status}).`);
-  return { sdp: answer };
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload?.error?.message || `Live voice request failed (${response.status}).`);
+  return { sdp: payload?.transport?.sdp || '' };
 }
 
 createServer(async (request, response) => {
