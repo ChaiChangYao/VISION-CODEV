@@ -1,0 +1,110 @@
+import { createServer } from 'node:http';
+
+const port = Number(process.env.PORT || 8080);
+const allowedOrigin = process.env.ALLOWED_ORIGIN || '*';
+const model = process.env.OPENAI_VISION_MODEL || 'gpt-4o-mini';
+const maxBodyBytes = 2_500_000;
+const rateWindows = new Map();
+
+const procedures = {
+  printer: {
+    title: 'Learn how to use a 3D printer',
+    steps: [
+      'Check that the print bed is clear and clean.',
+      'Load the correct filament and confirm it feeds freely.',
+      'Select the approved print file and verify material settings.',
+      'Start the print and watch the first layer for adhesion.',
+    ],
+  },
+};
+
+function json(response, status, value) {
+  response.writeHead(status, {
+    'content-type': 'application/json; charset=utf-8',
+    'access-control-allow-origin': allowedOrigin,
+    'access-control-allow-methods': 'GET,POST,OPTIONS',
+    'access-control-allow-headers': 'content-type',
+    'cache-control': 'no-store',
+  });
+  response.end(JSON.stringify(value));
+}
+
+function originAllowed(request) {
+  const origin = request.headers.origin;
+  return !origin || origin === allowedOrigin;
+}
+
+function withinRateLimit(request) {
+  const key = String(request.headers['x-forwarded-for'] || request.socket.remoteAddress || 'unknown').split(',')[0].trim();
+  const now = Date.now();
+  const current = rateWindows.get(key);
+  if (!current || now - current.startedAt >= 60_000) { rateWindows.set(key, { startedAt: now, count: 1 }); return true; }
+  current.count += 1;
+  return current.count <= 12;
+}
+
+async function body(request) {
+  let size = 0;
+  const chunks = [];
+  for await (const chunk of request) {
+    size += chunk.length;
+    if (size > maxBodyBytes) throw new Error('Frame payload is too large.');
+    chunks.push(chunk);
+  }
+  return JSON.parse(Buffer.concat(chunks).toString('utf8'));
+}
+
+function outputText(result) {
+  if (typeof result.output_text === 'string') return result.output_text;
+  for (const item of result.output || []) for (const part of item.content || []) if (part.type === 'output_text') return part.text;
+  throw new Error('The vision model returned no structured result.');
+}
+
+async function analyze(input) {
+  if (!process.env.OPENAI_API_KEY) throw new Error('Vision analysis is not configured.');
+  if (typeof input.imageDataUrl !== 'string' || !input.imageDataUrl.startsWith('data:image/jpeg;base64,')) throw new Error('A JPEG camera frame is required.');
+  const expectedStep = String(input.expectedStep || '').slice(0, 500);
+  const response = await fetch('https://api.openai.com/v1/responses', {
+    method: 'POST',
+    headers: { authorization: `Bearer ${process.env.OPENAI_API_KEY}`, 'content-type': 'application/json' },
+    body: JSON.stringify({
+      model,
+      store: false,
+      max_output_tokens: 180,
+      instructions: 'You assess a first-person technician camera frame against one approved procedure step. Describe only visible evidence. If uncertain or occluded, say uncertain. Never invent completion. Guidance must be one brief spoken sentence.',
+      input: [{ role: 'user', content: [
+        { type: 'input_text', text: `Approved current step: ${expectedStep}` },
+        { type: 'input_image', image_url: input.imageDataUrl, detail: 'low' },
+      ] }],
+      text: { format: { type: 'json_schema', name: 'technician_observation', strict: true, schema: {
+        type: 'object', additionalProperties: false,
+        properties: {
+          assessment: { type: 'string', enum: ['aligned', 'mistake', 'uncertain'] },
+          observedAction: { type: 'string' },
+          evidence: { type: 'string' },
+          guidance: { type: 'string' },
+          confidence: { type: 'number', minimum: 0, maximum: 1 },
+        },
+        required: ['assessment', 'observedAction', 'evidence', 'guidance', 'confidence'],
+      } } },
+    }),
+    signal: AbortSignal.timeout(30_000),
+  });
+  const result = await response.json();
+  if (!response.ok) throw new Error(result?.error?.message || `OpenAI request failed (${response.status}).`);
+  return JSON.parse(outputText(result));
+}
+
+createServer(async (request, response) => {
+  const url = new URL(request.url || '/', 'http://localhost');
+  if (!originAllowed(request)) return json(response, 403, { error: 'This origin is not allowed.' });
+  if (request.method === 'OPTIONS') return json(response, 204, {});
+  if (request.method === 'GET' && url.pathname === '/health') return json(response, 200, { status: 'ok', service: 'vision-codef-gateway' });
+  if (request.method === 'GET' && url.pathname === '/v1/procedures') return json(response, 200, procedures);
+  if (request.method === 'POST' && url.pathname === '/v1/analyze-frame') {
+    if (!withinRateLimit(request)) return json(response, 429, { error: 'Too many checks. Wait one minute and try again.' });
+    try { return json(response, 200, await analyze(await body(request))); }
+    catch (error) { return json(response, 400, { error: error instanceof Error ? error.message : 'Analysis failed.' }); }
+  }
+  return json(response, 404, { error: 'Not found.' });
+}).listen(port, '0.0.0.0', () => console.log(`Vision Codef gateway listening on ${port}`));
